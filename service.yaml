@@ -1,0 +1,73 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: adk-sales-system
+  annotations:
+    run.googleapis.com/ingress: all
+    run.googleapis.com/execution-environment: gen2
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/maxScale: "5"
+        run.googleapis.com/memory: "2Gi"
+        run.googleapis.com/cpu: "1"
+        run.googleapis.com/timeout: "3600s"
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      containerConcurrency: 10
+      timeoutSeconds: 3600
+      containers:
+      - image: gcr.io/PROJECT_ID/adk-sales-system:latest
+        ports:
+        - name: http1
+          containerPort: 8080
+        env:
+        - name: PORT
+          value: "8080"
+        - name: GOOGLE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: adk-secrets
+              key: google-api-key
+        - name: HDW_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: adk-secrets
+              key: hdw-api-token
+              optional: true
+        - name: EXA_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: adk-secrets
+              key: exa-api-key
+              optional: true
+        - name: FIRECRAWL_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: adk-secrets
+              key: firecrawl-api-key
+              optional: true
+        resources:
+          limits:
+            memory: "2Gi"
+            cpu: "1"
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          timeoutSeconds: 5
+          periodSeconds: 10
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          timeoutSeconds: 5
+          periodSeconds: 30
+          failureThreshold: 3
+  traffic:
+  - percent: 100
+    latestRevision: true

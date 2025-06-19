@@ -1,0 +1,68 @@
+# Git and version control
+.git
+.gitignore
+*.md
+README.md
+
+# Python cache and virtual environments
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env
+pip-log.txt
+pip-delete-this-directory.txt
+.tox
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.venv
+venv/
+.env
+
+# Development and testing
+tests/
+test_*.py
+*_test.py
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Local data and cache (keep structure but not data)
+cache/*.db*
+cache/*.sqlite*
+logs/*.log
+sessions/*
+data/json_storage/data/*
+data/json_storage/metadata/*
+hdw_api_cache.sqlite
+
+# Documentation and examples
+WEB_INTERFACE_README.md
+PERFORMANCE_OPTIMIZATIONS.md
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
