@@ -5,6 +5,7 @@ import uuid
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from utils.json_storage import save_large_json, load_large_json
+from utils.json_encoder import DateTimeEncoder
 
 from .adk_base_agent import ADKAgent
 from models import ICP, ICPCriteria, Conversation, MessageRole
@@ -113,6 +114,10 @@ class ADKICPAgent(ADKAgent):
     ) -> Dict[str, Any]:
         """Create ICP by researching companies and analyzing patterns.
         
+        WARNING: This method uses process_json_request() to generate ICP JSON.
+        This prevents infinite recursion that could occur if the agent tries to
+        call this method while generating the ICP structure.
+        
         Args:
             business_info: Basic business information provided by user
             example_companies: List of example company names or URLs
@@ -148,10 +153,10 @@ class ADKICPAgent(ADKAgent):
                                     
                                     # Try with alias first (correct way)
                                     try:
-                                        detailed_data = hdw_client.get_linkedin_company(company_alias, timeout=300)
+                                        detailed_data = hdw_client.get_linkedin_company(company_alias, timeout=30)
                                     except:
                                         # Fallback to URN if alias fails
-                                        detailed_data = hdw_client.get_linkedin_company(company_urn, timeout=300)
+                                        detailed_data = hdw_client.get_linkedin_company(company_urn, timeout=30)
                                     
                                     if detailed_data:
                                         detailed_company_data.append({
@@ -200,7 +205,7 @@ class ADKICPAgent(ADKAgent):
                 self.logger.info("Saved research data", key=research_key, companies=len(serializable_companies))
                 
                 # Use summary for prompt
-                companies_summary = f"Found {len(serializable_companies)} companies with detailed data. Examples: {json.dumps(serializable_companies[:3], indent=2)}"
+                companies_summary = f"Found {len(serializable_companies)} companies with detailed data. Examples: {json.dumps(serializable_companies[:3], indent=2, cls=DateTimeEncoder)}"
             else:
                 companies_summary = "None provided"
             
@@ -213,7 +218,7 @@ class ADKICPAgent(ADKAgent):
             Create an Ideal Customer Profile based on the following information:
             
             Business Information:
-            {json.dumps(business_info, indent=2)}
+            {json.dumps(business_info, indent=2, cls=DateTimeEncoder)}
             
             Researched Companies:
             {companies_summary}
@@ -280,15 +285,9 @@ class ADKICPAgent(ADKAgent):
             }}
             """
             
-            # Use direct message processing without function calling
-            # Save current tools and temporarily disable them
-            saved_tools = self.tools
-            self.tools = []
-            try:
-                response = await self.process_message(icp_prompt)
-            finally:
-                # Restore tools
-                self.tools = saved_tools
+            # Use process_json_request to prevent the agent from calling functions
+            # This ensures we get pure JSON output instead of function calls
+            response = await self.process_json_request(icp_prompt)
             
             # Parse the JSON response
             try:
@@ -379,6 +378,11 @@ class ADKICPAgent(ADKAgent):
     ) -> Dict[str, Any]:
         """Refine ICP criteria based on feedback.
         
+        WARNING: This method uses process_json_request() to prevent infinite recursion.
+        Since this method is registered as a tool, the agent might call it recursively
+        when asked to generate JSON. Always use process_json_request() or json_generation_mode()
+        when this method needs JSON output from the LLM.
+        
         Args:
             icp_id: ID of the ICP to refine
             feedback: User feedback on the ICP
@@ -388,23 +392,36 @@ class ADKICPAgent(ADKAgent):
             Dictionary with refined ICP data
         """
         try:
+            self.logger.info("Starting ICP refinement", icp_id=icp_id, feedback_length=len(feedback))
+            
             # Get existing ICP
             existing_icp = self.active_icps.get(icp_id)
             if not existing_icp:
                 return {"status": "error", "error_message": "ICP not found"}
+            
+            # Convert ICP to JSON-serializable format
+            icp_dict = existing_icp.model_dump()
+            # Convert datetime objects to strings
+            for key in ['created_at', 'updated_at']:
+                if key in icp_dict and hasattr(icp_dict[key], 'isoformat'):
+                    icp_dict[key] = icp_dict[key].isoformat()
+            # Convert feedback history datetimes
+            for feedback_item in icp_dict.get('feedback_history', []):
+                if 'timestamp' in feedback_item and hasattr(feedback_item['timestamp'], 'isoformat'):
+                    feedback_item['timestamp'] = feedback_item['timestamp'].isoformat()
             
             # Generate refinement prompt
             refinement_prompt = f"""
             Refine this Ideal Customer Profile based on user feedback:
             
             Current ICP:
-            {json.dumps(existing_icp.model_dump(), indent=2)}
+            {json.dumps(icp_dict, indent=2, cls=DateTimeEncoder)}
             
             User Feedback:
             {feedback}
             
             Specific Changes Requested:
-            {json.dumps(specific_changes, indent=2) if specific_changes else "None"}
+            {json.dumps(specific_changes, indent=2, cls=DateTimeEncoder) if specific_changes else "None"}
             
             Update the ICP while maintaining the same structure. Focus on:
             1. Incorporating the feedback
@@ -415,10 +432,18 @@ class ADKICPAgent(ADKAgent):
             Return the complete updated ICP as JSON with the same structure.
             """
             
-            response = await self.process_message(refinement_prompt)
+            # Use process_json_request to prevent infinite recursion
+            # The LLM might call refine_icp_criteria recursively when it's available as a tool
+            self.logger.warning("Using JSON generation mode to prevent infinite recursion in ICP refinement")
+            response = await self.process_json_request(refinement_prompt)
             
             # Parse the response
             try:
+                # Clean markdown formatting if present
+                if response.startswith("```json"):
+                    response = response[7:-3].strip()
+                elif response.startswith("```"):
+                    response = response[3:-3].strip()
                 refined_data = json.loads(response)
             except json.JSONDecodeError:
                 refined_data = existing_icp.model_dump()
@@ -433,7 +458,7 @@ class ADKICPAgent(ADKAgent):
             # Store the refined ICP
             self.active_icps[refined_icp.id] = refined_icp
             
-            self.logger.info("ICP refined", original_id=icp_id, refined_id=refined_icp.id)
+            self.logger.info("ICP refinement completed successfully", original_id=icp_id, refined_id=refined_icp.id)
             
             return {
                 "status": "success",

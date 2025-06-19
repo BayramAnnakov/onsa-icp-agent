@@ -173,18 +173,15 @@ You can also provide links to:
         # Move to ICP creation
         conversation.advance_step(WorkflowStep.ICP_CREATION)
         
-        return """
+        # Automatically trigger ICP creation
+        icp_response = await self._handle_icp_creation(conversation, "", [])
+        
+        return f"""
 Thank you for providing that information! I've analyzed your business details using our AI research tools.
 
 Let me now create an initial Ideal Customer Profile (ICP) for you using Google ADK agents and external data sources.
 
-This may take a moment as I:
-- Research similar companies in your industry
-- Analyze market patterns and trends
-- Extract insights from any websites you provided
-- Generate data-driven ICP recommendations
-
-Creating your ICP now...
+{icp_response}
         """.strip()
     
     async def _handle_icp_creation(
@@ -259,7 +256,10 @@ Once you're satisfied with the ICP, I'll use it to search for prospects using ou
             # User approves ICP, move to prospect search
             conversation.advance_step(WorkflowStep.PROSPECT_SEARCH)
             
-            return """
+            # Automatically trigger prospect search
+            search_response = await self._handle_prospect_search(conversation, "", [])
+            
+            return f"""
 Great! Your ICP looks good. Now I'll search for prospects using Google ADK agents and multiple data sources.
 
 I'll search through:
@@ -267,10 +267,7 @@ I'll search through:
 - Exa for people and contact information  
 - Firecrawl for website analysis and enrichment
 
-Target: 50 prospects that match your ICP criteria
-This may take a few minutes as I analyze multiple data sources...
-
-Starting prospect search now...
+{search_response}
             """.strip()
         
         else:
@@ -350,7 +347,7 @@ How does this look now? Please let me know if you'd like any other changes, or i
             if prospects:
                 ranking_result = await self.prospect_agent.rank_prospects_by_score(
                     prospect_ids=conversation.current_prospects,
-                    ranking_criteria={"sort_by": "total_score", "min_score": 0.5},
+                    ranking_criteria={"sort_by": "total_score", "min_score": 0.0},
                     limit=10
                 )
                 
@@ -401,8 +398,10 @@ Your feedback will help me improve the prospect selection using AI analysis.
     ) -> str:
         """Handle prospect review using ADK Prospect Agent."""
         
-        # Check if user is satisfied or wants to iterate
-        if any(word in message.lower() for word in ["good", "looks good", "approved", "proceed", "final"]):
+        # Use LLM to analyze user intent for approval/refinement
+        intent_analysis = await self._analyze_prospect_feedback_intent(message)
+        
+        if intent_analysis["is_approval"]:
             # Move to final approval
             conversation.advance_step(WorkflowStep.FINAL_APPROVAL)
             
@@ -439,18 +438,176 @@ Would you like me to set up automated prospect monitoring using ADK agents? I ca
                 self.logger.error("Error generating final report with ADK agent", error=str(e))
                 return "I'll finalize your prospect list. Would you like me to set up automated monitoring for new prospects?"
         
-        else:
-            # User wants to iterate - get feedback and refine
+        elif intent_analysis["is_question"]:
+            # User is asking questions - provide clarification
             return """
-I understand you'd like to adjust the prospect selection. Let me use Google ADK to refine the search based on your feedback.
+I'd be happy to help clarify! Here's what each element means:
+
+**Score Explanation:**
+- 🟢 0.8-1.0: Excellent match to your ICP
+- 🟡 0.6-0.8: Good match with some minor gaps  
+- 🔴 0.0-0.6: Poor match, significant gaps
+
+**What you can do:**
+1. **"These look good"** or **"Approve"** → Move to final steps
+2. **Give specific feedback** → "I don't like #3, focus on larger companies"
+3. **Ask for adjustments** → "Can you find more VP-level prospects?"
+
+Which prospects interest you most, or what would you like to adjust?
+            """.strip()
+            
+        else:
+            # User wants to iterate - process feedback and refine
+            try:
+                # Use LLM to parse feedback and identify good/bad prospects
+                parse_prompt = f"""
+                Analyze the user's feedback about the prospects and extract:
+                1. Which prospect numbers they liked (if any)
+                2. Which prospect numbers they didn't like (if any)
+                3. General feedback about what to change
+                
+                User feedback: {message}
+                
+                Total prospects shown: 10 (numbered 1-10)
+                
+                Return a JSON object with:
+                {{
+                    "liked_prospects": [list of prospect numbers they liked, e.g. [1, 3, 5]],
+                    "disliked_prospects": [list of prospect numbers they didn't like, e.g. [2, 4]],
+                    "general_feedback": "summary of what they want changed",
+                    "specific_requests": {{
+                        "company_size": "preference if mentioned",
+                        "industry": "preference if mentioned", 
+                        "seniority": "preference if mentioned",
+                        "location": "preference if mentioned",
+                        "other": "any other specific requests"
+                    }}
+                }}
+                
+                Note: The user might provide feedback in any language or format. Extract the meaning regardless of language.
+                """
+                
+                # Use the ICP agent to parse (it has LLM capabilities)
+                parse_response = await self.icp_agent.process_message(parse_prompt)
+                
+                try:
+                    parsed_feedback = json.loads(parse_response)
+                except json.JSONDecodeError:
+                    # Fallback to empty lists if parsing fails
+                    parsed_feedback = {
+                        "liked_prospects": [],
+                        "disliked_prospects": [],
+                        "general_feedback": message,
+                        "specific_requests": {}
+                    }
+                
+                # Convert prospect numbers to IDs
+                good_prospect_ids = []
+                bad_prospect_ids = []
+                
+                for num in parsed_feedback.get("liked_prospects", []):
+                    if 0 < num <= len(conversation.current_prospects):
+                        good_prospect_ids.append(conversation.current_prospects[num-1])
+                
+                for num in parsed_feedback.get("disliked_prospects", []):
+                    if 0 < num <= len(conversation.current_prospects):
+                        bad_prospect_ids.append(conversation.current_prospects[num-1])
+                
+                # Get current ICP
+                icp_export = await self.icp_agent.export_icp(
+                    icp_id=conversation.current_icp_id,
+                    format="json"
+                )
+                
+                if icp_export["status"] != "success":
+                    return "I couldn't retrieve your ICP for refinement. Please try again."
+                
+                icp_criteria = icp_export["icp"]
+                
+                # Use prospect agent to refine search based on feedback
+                refinement_result = await self.prospect_agent.refine_prospect_search(
+                    current_prospects=conversation.current_prospects,
+                    feedback=message,
+                    good_prospect_ids=good_prospect_ids,
+                    bad_prospect_ids=bad_prospect_ids,
+                    icp_criteria=icp_criteria
+                )
+                
+                if refinement_result["status"] != "success":
+                    return f"I had trouble refining the search: {refinement_result.get('error_message', 'Unknown error')}. Could you provide more specific feedback?"
+                
+                # Update prospect list
+                new_prospects = refinement_result["prospects"]
+                conversation.current_prospects = [p.get("id") if isinstance(p, dict) else p.id for p in new_prospects]
+                
+                # Get top 10 for display
+                if new_prospects:
+                    ranking_result = await self.prospect_agent.rank_prospects_by_score(
+                        prospect_ids=conversation.current_prospects,
+                        ranking_criteria={"sort_by": "total_score", "min_score": 0.0},
+                        limit=10
+                    )
+                    
+                    if ranking_result["status"] == "success":
+                        top_prospects = ranking_result["prospects"]
+                    else:
+                        top_prospects = new_prospects[:10]
+                else:
+                    top_prospects = []
+                
+                # Format prospects for display
+                formatted_prospects = self._format_prospects_for_display(top_prospects)
+                
+                # Get refinements applied
+                refinements = refinement_result.get("refinements_applied", {})
+                refinement_summary = []
+                
+                if refinements.get("refined_criteria"):
+                    criteria = refinements["refined_criteria"]
+                    if "company_size" in criteria:
+                        refinement_summary.append(f"• Company size: {', '.join(criteria['company_size'])}")
+                    if "industries" in criteria:
+                        refinement_summary.append(f"• Industries: {', '.join(criteria['industries'][:3])}")
+                    if "job_titles" in criteria:
+                        refinement_summary.append(f"• Job titles: {', '.join(criteria['job_titles'][:3])}")
+                
+                return f"""
+I've refined the prospect search based on your feedback using Google ADK analysis!
+
+**Refinements Applied:**
+{chr(10).join(refinement_summary) if refinement_summary else "• AI-based adjustments to match your preferences"}
+• Similarity scoring based on your examples
+• Feedback incorporated into search parameters
+
+**Updated Top 10 Prospects:**
+
+{formatted_prospects}
+
+**Search Results:**
+- Total prospects found: {len(new_prospects)}
+- Feedback processed: ✓
+- AI refinement applied: ✓
+
+How do these prospects look? You can:
+1. Provide more feedback to further refine
+2. Approve to move forward
+3. Specify exact criteria to adjust
+
+What would you like to do?
+                """.strip()
+                
+            except Exception as e:
+                self.logger.error("Error processing prospect feedback", error=str(e))
+                return f"""
+I understand you'd like to adjust the prospect selection. Let me help you refine the search.
 
 Could you be more specific about:
-1. Which prospects you liked and why?
-2. Which prospects you didn't like and why?
-3. What characteristics should I prioritize more/less?
+1. Which prospects you liked and why? (e.g., "I like #1 and #3")
+2. Which prospects you didn't like and why? (e.g., "Not #2 - wrong industry")  
+3. What characteristics should I prioritize? (e.g., "Focus on larger companies")
 
-I'll use this feedback to improve the prospect scoring and find better matches using AI analysis.
-            """.strip()
+I'll use this feedback to improve the prospect selection using AI analysis.
+                """.strip()
     
     async def _handle_final_approval(
         self,
@@ -571,28 +728,178 @@ Is there anything else I can help you with today?
         return "Any"
     
     def _format_prospects_for_display(self, prospects: List[Dict[str, Any]]) -> str:
-        """Format prospects for user-friendly display."""
+        """Format prospects for user-friendly display with enhanced formatting."""
         
-        formatted_prospects = []
+        # Create a summary table first
+        table_lines = ["| # | Name | Title | Company | Score |", 
+                      "|---|------|-------|---------|-------|"]
         
         for i, prospect in enumerate(prospects[:10], 1):
             company = prospect.get('company', {})
             person = prospect.get('person', {})
             score = prospect.get('score', {})
             
-            formatted_prospect = f"""
-**{i}. {person.get('first_name', 'Unknown')} {person.get('last_name', 'Person')}**
-- Company: {company.get('name', 'Unknown Company')}
-- Title: {person.get('title', 'Unknown Title')}
-- Industry: {company.get('industry', 'Unknown')}
-- Score: {score.get('total_score', 0):.2f}/1.0 (AI-Generated)
-- Email: {person.get('email', 'Not available')}
-- LinkedIn: {person.get('linkedin_url', 'Not available')}
-            """.strip()
+            # Format score with emoji
+            score_val = score.get('total_score', 0)
+            if score_val >= 0.8:
+                score_emoji = "🟢"
+            elif score_val >= 0.6:
+                score_emoji = "🟡"
+            else:
+                score_emoji = "🔴"
             
-            formatted_prospects.append(formatted_prospect)
+            name = f"{person.get('first_name', 'Unknown')} {person.get('last_name', '')}"
+            title = person.get('title', 'Unknown')[:30]
+            company_name = company.get('name', 'Unknown')[:25]
+            
+            table_lines.append(f"| {i} | {name} | {title} | {company_name} | {score_emoji} {score_val:.2f} |")
         
-        return '\n\n'.join(formatted_prospects)
+        # Add detailed view
+        detailed_prospects = []
+        
+        for i, prospect in enumerate(prospects[:10], 1):
+            company = prospect.get('company', {})
+            person = prospect.get('person', {})
+            score = prospect.get('score', {})
+            
+            # Make LinkedIn URL clickable if available
+            linkedin = person.get('linkedin_url', '')
+            linkedin_display = f"[View Profile]({linkedin})" if linkedin and linkedin != 'Not available' else 'Not available'
+            
+            email = person.get('email', 'Not available')
+            email_display = f"`{email}`" if email != 'Not available' else email
+            
+            formatted_prospect = f"""
+<details>
+<summary><b>{i}. {person.get('first_name', 'Unknown')} {person.get('last_name', 'Person')}</b> - {person.get('title', 'Unknown Title')}</summary>
+
+**Company:** {company.get('name', 'Unknown Company')}  
+**Industry:** {company.get('industry', 'Unknown')}  
+**Size:** {company.get('employee_range', 'Unknown')}  
+**Location:** {company.get('headquarters', 'Unknown')}  
+
+**Score:** {score.get('total_score', 0):.2f}/1.0 (AI-Generated)  
+**Email:** {email_display}  
+**LinkedIn:** {linkedin_display}  
+
+</details>"""
+            
+            detailed_prospects.append(formatted_prospect)
+        
+        return "\n".join(table_lines) + "\n\n**Detailed View (click to expand):**\n\n" + '\n'.join(detailed_prospects)
+    
+    async def _analyze_prospect_feedback_intent(self, message: str) -> Dict[str, Any]:
+        """Use LLM to analyze user intent in prospect feedback."""
+        
+        analysis_prompt = f"""
+        Analyze this user message about prospect review and determine their intent.
+        
+        User message: "{message}"
+        
+        Context: The user has been shown a list of prospects and asked if they want to:
+        1. Provide more feedback to further refine
+        2. Approve to move forward  
+        3. Specify exact criteria to adjust
+        
+        Determine if the user is:
+        - APPROVING the prospects (wants to move forward, satisfied, likes them)
+        - REQUESTING REFINEMENT (wants changes, adjustments, improvements)
+        - ASKING QUESTIONS (unclear, needs clarification)
+        
+        Return JSON:
+        {{
+            "is_approval": true/false,
+            "is_refinement_request": true/false,
+            "is_question": true/false,
+            "confidence": 0.0-1.0,
+            "reasoning": "brief explanation of the classification"
+        }}
+        
+        Examples:
+        - "Yes, these look good" → approval
+        - "Looks great, let's proceed" → approval  
+        - "Perfect, move forward" → approval
+        - "2" (referring to option 2) → approval
+        - "I don't like #3, too small company" → refinement
+        - "Can you focus more on tech companies?" → refinement
+        - "What does the score mean?" → question
+        - "These are not what I'm looking for" → refinement
+        """
+        
+        try:
+            # Use research agent's LLM to analyze intent
+            response = await self.research_agent.process_json_request(analysis_prompt)
+            
+            # Parse JSON response
+            import json
+            intent_data = json.loads(response)
+            
+            # Validate required fields
+            required_fields = ["is_approval", "is_refinement_request", "is_question", "confidence"]
+            for field in required_fields:
+                if field not in intent_data:
+                    intent_data[field] = False if field != "confidence" else 0.5
+            
+            self.logger.info("Analyzed prospect feedback intent", 
+                           intent=intent_data, 
+                           message_preview=message[:50])
+            
+            return intent_data
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to analyze intent via LLM, falling back to keywords: {e}")
+            
+            # Fallback to simple keyword analysis
+            lower_msg = message.lower()
+            
+            # Simple approval detection as fallback
+            approval_keywords = ["yes", "good", "great", "perfect", "approve", "proceed", "move forward", "looks good"]
+            refinement_keywords = ["no", "change", "refine", "adjust", "don't like", "wrong", "bad", "improve"]
+            
+            is_approval = any(keyword in lower_msg for keyword in approval_keywords)
+            is_refinement = any(keyword in lower_msg for keyword in refinement_keywords)
+            
+            return {
+                "is_approval": is_approval and not is_refinement,
+                "is_refinement_request": is_refinement or (not is_approval and len(message) > 10),
+                "is_question": "?" in message or "what" in lower_msg or "how" in lower_msg,
+                "confidence": 0.6,
+                "reasoning": "Fallback keyword analysis"
+            }
+    
+    def _format_prospects_as_table(self, prospects: List[Dict[str, Any]]) -> List[List[str]]:
+        """Format prospects as table data for better UI display."""
+        
+        table_data = []
+        headers = ["#", "Name", "Title", "Company", "Industry", "Score", "Email", "LinkedIn"]
+        
+        for i, prospect in enumerate(prospects[:10], 1):
+            company = prospect.get('company', {})
+            person = prospect.get('person', {})
+            score = prospect.get('score', {})
+            
+            # Format score with color indicator
+            score_val = score.get('total_score', 0)
+            if score_val >= 0.8:
+                score_display = f"🟢 {score_val:.2f}"
+            elif score_val >= 0.6:
+                score_display = f"🟡 {score_val:.2f}"
+            else:
+                score_display = f"🔴 {score_val:.2f}"
+            
+            row = [
+                str(i),
+                f"{person.get('first_name', '')} {person.get('last_name', '')}".strip() or "Unknown",
+                person.get('title', 'Unknown'),
+                company.get('name', 'Unknown'),
+                company.get('industry', 'Unknown'),
+                score_display,
+                person.get('email', 'N/A'),
+                person.get('linkedin_url', 'N/A')[:30] + "..." if person.get('linkedin_url') else 'N/A'
+            ]
+            table_data.append(row)
+        
+        return [headers] + table_data
     
     def get_conversation_history(self, conversation_id: str) -> Optional[List[Dict[str, Any]]]:
         """Get conversation message history."""

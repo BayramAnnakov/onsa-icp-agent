@@ -16,6 +16,7 @@ from google.genai import types
 
 import structlog
 from pydantic import BaseModel, Field
+from contextlib import asynccontextmanager
 
 from models import Conversation, ConversationMessage, MessageRole
 from utils.config import Config
@@ -116,8 +117,9 @@ class ADKAgent(ABC):
         # Add to tools list
         self.tools.append(tool)
         
-        # Recreate the ADK agent with updated tools
-        self._create_adk_agent()
+        # Don't recreate agent immediately - defer until first use
+        if hasattr(self, '_adk_agent_initialized'):
+            self._adk_agent_initialized = False
         
         self.logger.info("Added external tool", tool_name=name)
     
@@ -129,9 +131,10 @@ class ADKAgent(ABC):
     ) -> str:
         """Process a message using Google ADK."""
         
-        # Ensure ADK agent is created
-        if not self.adk_agent:
+        # Ensure ADK agent is created or recreated if tools changed
+        if not self.adk_agent or not getattr(self, '_adk_agent_initialized', False):
             self._create_adk_agent()
+            self._adk_agent_initialized = True
         
         # Get or create conversation
         if conversation_id:
@@ -236,7 +239,7 @@ class ADKAgent(ABC):
             companies = hdw_client.search_companies(
                 keywords=query,
                 count=min(limit, 1),  # Limit to 1 for now
-                timeout=300
+                timeout=30  # Reduced from 300
             )
             
             # Cache the result
@@ -290,20 +293,29 @@ class ADKAgent(ABC):
                 current_titles=current_titles,
                 locations=locations,
                 count=min(limit, 1),  # Limit to 1 for now
-                timeout=300
+                timeout=30  # Reduced from 300
             )
             
             # Convert to standard format
             people = []
             for user in users:
+                # Extract first and last name from full name
+                name_parts = user.name.split() if user.name else ["Unknown"]
+                first_name = name_parts[0] if name_parts else "Unknown"
+                last_name = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
+                
+                # Get current position and company from current_companies
+                current_title = user.current_companies[0].position if user.current_companies else user.headline
+                current_company = user.current_companies[0].company.name if user.current_companies and hasattr(user.current_companies[0].company, 'name') else "Unknown"
+                
                 people.append({
-                    "first_name": user.first_name,
-                    "last_name": user.last_name,
-                    "name": f"{user.first_name} {user.last_name}",
-                    "title": user.current_position_title,
-                    "company": user.current_company_name,
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "name": user.name,
+                    "title": current_title,
+                    "company": current_company,
                     "linkedin_url": user.url,
-                    "location": user.location,
+                    "location": user.location.name if hasattr(user.location, 'name') else str(user.location),
                     "source": "hdw"
                 })
             
@@ -395,18 +407,22 @@ class ADKAgent(ABC):
                 return {"status": "success", "content": cached_result, "cached": True}
             
             # Call the actual API (async method)
-            content = await firecrawl_client.scrape_url(
+            scrape_result = await firecrawl_client.scrape_url(
                 url=url,
                 include_links=include_links,
                 include_metadata=True,
                 format_type="markdown"
             )
             
-            # Cache the result
+            # The scrape_result is already a processed dictionary with "content" key
+            content = scrape_result.get("content", "")
+            metadata = scrape_result.get("metadata", {})
+            
+            # Cache the content string
             self.cache_manager.set(cache_key, content)
             
             self.logger.info("Website scraped via Firecrawl", url=url)
-            return {"status": "success", "content": content}
+            return {"status": "success", "content": content, "metadata": metadata}
             
         except Exception as e:
             self.logger.error("Error scraping website with Firecrawl", error=str(e))
@@ -435,7 +451,7 @@ class ADKAgent(ABC):
             industries = hdw_client.search_industries(
                 name=name,
                 count=count,
-                timeout=300
+                timeout=30  # Reduced from 300
             )
             
             # Format results with URNs
@@ -503,7 +519,7 @@ class ADKAgent(ABC):
                 levels=levels,
                 company_sizes=company_sizes,
                 count=count,
-                timeout=300
+                timeout=30  # Reduced from 300
             )
             
             # Convert to standard format
@@ -564,7 +580,7 @@ class ADKAgent(ABC):
             locations = hdw_client.search_locations(
                 name=name,
                 count=count,
-                timeout=300
+                timeout=30  # Reduced from 300
             )
             
             # Format results with URNs
@@ -645,6 +661,11 @@ class ADKAgent(ABC):
             if hasattr(tool, 'func'):
                 tool_functions.append(tool.func)
         
+        # Check if we need to recreate the agent (only if tools changed)
+        if hasattr(self, '_last_tool_count') and self._last_tool_count == len(tool_functions):
+            self.logger.debug("Tools unchanged, skipping agent recreation")
+            return
+        
         # Create agent with simplified configuration
         try:
             self.adk_agent = Agent(
@@ -658,6 +679,7 @@ class ADKAgent(ABC):
                 app_name="icp_agent_system",
                 session_service=self.session_service
             )
+            self._last_tool_count = len(tool_functions)
             self.logger.info("Google ADK agent created successfully", tool_count=len(tool_functions))
         except Exception as e:
             self.logger.error("Error creating Google ADK agent", error=str(e))
@@ -673,6 +695,99 @@ class ADKAgent(ABC):
                 app_name="icp_agent_system",
                 session_service=self.session_service
             )
+            self._last_tool_count = 0
+    
+    @asynccontextmanager
+    async def json_generation_mode(self):
+        """Context manager to temporarily disable tools for JSON generation.
+        
+        This prevents infinite recursion when a tool function needs the agent
+        to generate JSON output. The agent might otherwise call the tool
+        recursively instead of returning JSON.
+        
+        Usage:
+            async with self.json_generation_mode():
+                response = await self.process_message(prompt)
+        """
+        # Save current tools
+        saved_tools = self.tools
+        saved_adk_agent = self.adk_agent
+        saved_runner = self.runner
+        
+        try:
+            # Temporarily clear tools
+            self.tools = []
+            
+            # Create a tool-less agent for JSON generation
+            self.logger.debug("Entering JSON generation mode - tools disabled")
+            self._create_adk_agent()
+            
+            yield
+            
+        finally:
+            # Restore original tools and agent
+            self.tools = saved_tools
+            self.adk_agent = saved_adk_agent
+            self.runner = saved_runner
+            self.logger.debug("Exited JSON generation mode - tools restored")
+    
+    async def process_json_request(self, prompt: str) -> str:
+        """Process a request that expects JSON output without tool calls.
+        
+        This method ensures the agent generates pure JSON without attempting
+        to call any tools, preventing infinite recursion issues.
+        
+        Args:
+            prompt: The prompt requesting JSON generation
+            
+        Returns:
+            The JSON response as a string
+        """
+        # Create a separate agent without tools for JSON generation
+        json_agent = Agent(
+            model=self.config.gemini.model,
+            name=self.agent_name,
+            instruction=self.agent_description,
+            tools=[]  # No tools to prevent function calling
+        )
+        json_runner = Runner(
+            agent=json_agent,
+            app_name="icp_agent_system",
+            session_service=self.session_service
+        )
+        
+        # Process message with the tool-less agent
+        session_id = f"json_gen_{int(datetime.now().timestamp())}"
+        session = await self.session_service.create_session(
+            app_name="icp_agent_system",
+            user_id="system",
+            session_id=session_id
+        )
+        
+        content = types.Content(
+            role='user',
+            parts=[types.Part(text=prompt)]
+        )
+        
+        response_text = ""
+        events_async = json_runner.run_async(
+            session_id=session.id,
+            user_id="system",
+            new_message=content
+        )
+        
+        async for event in events_async:
+            if event.content and event.content.parts:
+                if text := ''.join(part.text or '' for part in event.content.parts):
+                    response_text += text
+        
+        # Clean up markdown formatting if present
+        if response_text.strip().startswith("```json"):
+            response_text = response_text.strip()[7:-3].strip()
+        elif response_text.strip().startswith("```"):
+            response_text = response_text.strip()[3:-3].strip()
+        
+        return response_text
     
     # Utility methods
     

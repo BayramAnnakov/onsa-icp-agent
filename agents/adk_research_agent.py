@@ -5,6 +5,7 @@ import uuid
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 
+from utils.json_encoder import DateTimeEncoder
 from .adk_base_agent import ADKAgent
 from models import Conversation, MessageRole
 from utils.config import Config
@@ -117,7 +118,7 @@ class ADKResearchAgent(ADKAgent):
         self,
         company_identifier: str,
         analysis_depth: str = "standard",
-        focus_areas: List[str] = None
+        focus_areas: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """Conduct comprehensive company analysis.
         
@@ -268,7 +269,7 @@ class ADKResearchAgent(ADKAgent):
             
             Target Company: {target_company}
             Industry: {industry}
-            Competitors: {json.dumps(competitive_analysis["competitors"][:3], indent=2)}
+            Competitors: {json.dumps(competitive_analysis["competitors"][:3], indent=2, cls=DateTimeEncoder)}
             
             Provide insights on:
             1. Market positioning
@@ -281,7 +282,8 @@ class ADKResearchAgent(ADKAgent):
             Return as structured JSON with competitive insights.
             """
             
-            insights = await self.process_message(insights_prompt)
+            # Use process_json_request to prevent infinite recursion
+            insights = await self.process_json_request(insights_prompt)
             competitive_analysis["market_insights"] = insights
             
             return {
@@ -296,7 +298,7 @@ class ADKResearchAgent(ADKAgent):
     async def industry_research(
         self,
         industry: str,
-        research_focus: List[str] = None,
+        research_focus: Optional[List[str]] = None,
         depth: str = "standard"
     ) -> Dict[str, Any]:
         """Research industry trends and insights.
@@ -345,7 +347,7 @@ class ADKResearchAgent(ADKAgent):
             Analyze this industry and provide comprehensive insights:
             
             Industry: {industry}
-            Key Companies: {json.dumps(research_results["findings"].get("key_companies", [])[:3], indent=2)}
+            Key Companies: {json.dumps(research_results["findings"].get("key_companies", [])[:3], indent=2, cls=DateTimeEncoder)}
             Research Focus: {research_focus}
             
             Provide detailed analysis of:
@@ -359,7 +361,8 @@ class ADKResearchAgent(ADKAgent):
             Return as structured JSON with industry insights.
             """
             
-            insights = await self.process_message(insights_prompt)
+            # Use process_json_request to prevent infinite recursion
+            insights = await self.process_json_request(insights_prompt)
             research_results["insights"] = insights
             
             return {
@@ -374,7 +377,7 @@ class ADKResearchAgent(ADKAgent):
     async def website_content_analysis(
         self,
         url: str,
-        analysis_focus: List[str] = None
+        analysis_focus: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """Deep analysis of website content.
         
@@ -404,7 +407,7 @@ class ADKResearchAgent(ADKAgent):
             Conduct deep analysis of this website content:
             
             URL: {url}
-            Content: {scrape_result["content"][:4000]}...
+            Content: {str(scrape_result.get("content", ""))[:4000]}...
             
             Analysis Focus: {analysis_focus}
             
@@ -421,7 +424,8 @@ class ADKResearchAgent(ADKAgent):
             Return as structured JSON with detailed analysis for each focus area.
             """
             
-            analysis = await self.process_message(analysis_prompt)
+            # Use process_json_request to prevent infinite recursion
+            analysis = await self.process_json_request(analysis_prompt)
             
             return {
                 "status": "success",
@@ -498,7 +502,7 @@ class ADKResearchAgent(ADKAgent):
         Generate comprehensive insights from this company research:
         
         Research Findings:
-        {json.dumps(findings, indent=2)}
+        {json.dumps(findings, indent=2, cls=DateTimeEncoder)}
         
         Focus Areas: {focus_areas}
         
@@ -514,7 +518,8 @@ class ADKResearchAgent(ADKAgent):
         Return as structured analysis with clear insights and recommendations.
         """
         
-        return await self.process_message(insights_prompt)
+        # Use process_json_request to prevent infinite recursion
+        return await self.process_json_request(insights_prompt)
     
     # Required abstract method implementations
     

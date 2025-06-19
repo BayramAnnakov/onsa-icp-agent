@@ -439,11 +439,20 @@ class ExaExtractor:
         people = []
         for i, item in enumerate(items):
             try:
-                logger.debug(f"Parsing item {i}: {json.dumps(item, indent=2)[:500]}...")
+                # Log first few items in detail for debugging
+                if i < 3:
+                    logger.info(f"Parsing item {i} - keys: {list(item.keys()) if isinstance(item, dict) else 'not a dict'}")
+                    if isinstance(item, dict) and "enrichments" in item:
+                        enrichments = item["enrichments"]
+                        if isinstance(enrichments, dict):
+                            logger.info(f"Item {i} enrichments keys: {list(enrichments.keys())[:5]}")
+                        elif isinstance(enrichments, list):
+                            logger.info(f"Item {i} enrichments is a list with {len(enrichments)} items")
+                
                 person_data = self._parse_person_item(item)
                 if person_data:
                     people.extend(person_data if isinstance(person_data, list) else [person_data])
-                    logger.debug(f"Extracted {len(person_data) if isinstance(person_data, list) else 1} people from item {i}")
+                    logger.info(f"Extracted {len(person_data) if isinstance(person_data, list) else 1} people from item {i}")
                 else:
                     logger.debug(f"No people extracted from item {i}")
             except Exception as e:
@@ -506,6 +515,9 @@ class ExaExtractor:
         Returns:
             List of person dictionaries
         """
+        # Log the item structure for debugging
+        logger.debug(f"Parsing person item with keys: {list(item.keys())}")
+        
         # Check if item has properties.person (structured data)
         properties = item.get("properties", {})
         if properties.get("type") == "person" and "person" in properties:
@@ -533,14 +545,14 @@ class ExaExtractor:
                 'extracted_at': datetime.now().isoformat()
             }]
         
-        # Fallback to enrichments parsing if no structured data
-        enrichments_list = item.get("enrichments", [])
+        # Try to parse enrichments - handle both dict and list formats
+        enrichments = item.get("enrichments", {})
         
-        # Enrichments might be nested - flatten if needed
-        if enrichments_list and isinstance(enrichments_list[0], list):
-            enrichments_list = enrichments_list[0]
+        # Log enrichments structure
+        if enrichments:
+            logger.debug(f"Enrichments type: {type(enrichments)}, keys/length: {list(enrichments.keys()) if isinstance(enrichments, dict) else len(enrichments) if isinstance(enrichments, list) else 'empty'}")
         
-        # Default values
+        # Initialize default values
         name = ""
         role = ""
         company = ""
@@ -548,23 +560,74 @@ class ExaExtractor:
         email = ""
         bio = ""
         
-        if isinstance(enrichments_list, list) and len(enrichments_list) > 0:
+        # Handle enrichments as dictionary (most common case from Exa)
+        if isinstance(enrichments, dict):
+            # Try different possible keys for person data
+            name = enrichments.get("Person full name", "") or enrichments.get("name", "") or enrichments.get("Name", "")
+            role = enrichments.get("Current job title or role", "") or enrichments.get("Job title or role", "") or enrichments.get("title", "") or enrichments.get("role", "")
+            company = enrichments.get("Current company name", "") or enrichments.get("Company name", "") or enrichments.get("company", "")
+            linkedin_url = enrichments.get("LinkedIn profile URL", "") or enrichments.get("linkedin_url", "") or enrichments.get("linkedin", "")
+            email = enrichments.get("Email address if available", "") or enrichments.get("email", "")
+            bio = enrichments.get("Professional background and expertise", "") or enrichments.get("Professional background or bio", "") or enrichments.get("bio", "")
+            
+            # Clean up the values
+            name = str(name).strip() if name else ""
+            role = str(role).strip() if role else ""
+            company = str(company).strip() if company else ""
+            linkedin_url = str(linkedin_url).strip() if linkedin_url else ""
+            email = str(email).strip() if email else ""
+            bio = str(bio).strip() if bio else ""
+            
+            logger.debug(f"Parsed from dict - name: {name}, role: {role}, company: {company}")
+            
+        # Handle enrichments as list (legacy format)
+        elif isinstance(enrichments, list):
+            # Flatten nested lists if needed
+            if enrichments and isinstance(enrichments[0], list):
+                enrichments = enrichments[0]
+            
             # Extract based on position in array
-            if len(enrichments_list) > 0 and enrichments_list[0] and isinstance(enrichments_list[0], dict):
-                name = enrichments_list[0].get("result", "").strip()
-            if len(enrichments_list) > 1 and enrichments_list[1] and isinstance(enrichments_list[1], dict):
-                role = enrichments_list[1].get("result", "").strip()
-            if len(enrichments_list) > 2 and enrichments_list[2] and isinstance(enrichments_list[2], dict):
-                company = enrichments_list[2].get("result", "").strip()
-            if len(enrichments_list) > 3 and enrichments_list[3] and isinstance(enrichments_list[3], dict):
-                linkedin_url = enrichments_list[3].get("result", "").strip()
-            if len(enrichments_list) > 4 and enrichments_list[4] and isinstance(enrichments_list[4], dict):
-                email = enrichments_list[4].get("result", "").strip()
-            if len(enrichments_list) > 5 and enrichments_list[5] and isinstance(enrichments_list[5], dict):
-                bio = enrichments_list[5].get("result", "").strip()
+            if len(enrichments) > 0:
+                if isinstance(enrichments[0], dict):
+                    name = enrichments[0].get("result", "").strip()
+                elif isinstance(enrichments[0], str):
+                    name = enrichments[0].strip()
+                    
+            if len(enrichments) > 1:
+                if isinstance(enrichments[1], dict):
+                    role = enrichments[1].get("result", "").strip()
+                elif isinstance(enrichments[1], str):
+                    role = enrichments[1].strip()
+                    
+            if len(enrichments) > 2:
+                if isinstance(enrichments[2], dict):
+                    company = enrichments[2].get("result", "").strip()
+                elif isinstance(enrichments[2], str):
+                    company = enrichments[2].strip()
+                    
+            if len(enrichments) > 3:
+                if isinstance(enrichments[3], dict):
+                    linkedin_url = enrichments[3].get("result", "").strip()
+                elif isinstance(enrichments[3], str):
+                    linkedin_url = enrichments[3].strip()
+                    
+            if len(enrichments) > 4:
+                if isinstance(enrichments[4], dict):
+                    email = enrichments[4].get("result", "").strip()
+                elif isinstance(enrichments[4], str):
+                    email = enrichments[4].strip()
+                    
+            if len(enrichments) > 5:
+                if isinstance(enrichments[5], dict):
+                    bio = enrichments[5].get("result", "").strip()
+                elif isinstance(enrichments[5], str):
+                    bio = enrichments[5].strip()
+            
+            logger.debug(f"Parsed from list - name: {name}, role: {role}, company: {company}")
         
-        # Basic validation
+        # Basic validation - require at least a name
         if not name:
+            logger.debug("No name found in item, skipping")
             return []
         
         # Handle multiple people in single response
@@ -582,23 +645,30 @@ class ExaExtractor:
                 if individual_name:
                     people.append({
                         'name': individual_name,
-                        'role': role,
+                        'title': role,
+                        'role': role,  # Include both for compatibility
                         'company': company,
-                        'linkedin_url': linkedin_url if len(names) == 1 else None,  # Only assign if single person
+                        'linkedin_url': linkedin_url if len(names) == 1 else "",  # Only assign if single person
+                        'email': email if len(names) == 1 else "",
                         'bio': bio,
+                        'source_url': item.get("url", ""),
                         'extracted_at': datetime.now().isoformat()
                     })
         else:
             # Single person
             people.append({
                 'name': name,
-                'role': role,
+                'title': role,
+                'role': role,  # Include both for compatibility
                 'company': company,
                 'linkedin_url': linkedin_url,
+                'email': email,
                 'bio': bio,
+                'source_url': item.get("url", ""),
                 'extracted_at': datetime.now().isoformat()
             })
         
+        logger.debug(f"Extracted {len(people)} people from item")
         return people
     
     def build_enhanced_search_query(self, base_query: str, icp_criteria: Dict[str, Any], search_type: str = "people") -> str:

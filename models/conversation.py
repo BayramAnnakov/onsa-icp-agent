@@ -140,6 +140,16 @@ class Conversation(BaseModel):
             self.completed_steps.append(self.current_step)
         
         self.current_step = next_step
+        
+        # Log the transition for debugging
+        import structlog
+        logger = structlog.get_logger()
+        logger.info(
+            "Workflow step advanced",
+            conversation_id=self.id,
+            from_step=self.completed_steps[-1].value if self.completed_steps else "START",
+            to_step=next_step.value
+        )
         self.updated_at = datetime.now()
     
     def get_latest_messages(self, count: int = 10) -> List[ConversationMessage]:

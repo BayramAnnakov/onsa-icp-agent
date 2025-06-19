@@ -7,7 +7,7 @@ from datetime import datetime
 import structlog
 
 try:
-    from firecrawl import FirecrawlApp
+    from firecrawl import FirecrawlApp, ScrapeOptions
 except ImportError:
     raise ImportError("firecrawl-py is required. Install with: pip install firecrawl-py")
 
@@ -72,20 +72,19 @@ class FirecrawlClient:
                 return cached_content
         
         # Prepare scrape options according to v1 API
-        params = {
-            'formats': [format_type],
-            'onlyMainContent': True
-        }
+        formats = [format_type]
         
+        # Add links format if requested
         if include_links:
-            params['includeRawHtml'] = True  # Changed from extractLinks
+            formats.append('links')
         
         try:
             # Use Firecrawl SDK to scrape
+            # Correct usage: app.scrape_url(url, formats=['markdown'])
             result = await asyncio.to_thread(
                 self.app.scrape_url,
                 url,
-                **params
+                formats=formats
             )
             
             # Process the scraped content
@@ -143,29 +142,16 @@ class FirecrawlClient:
                 self.logger.info("Using cached crawl results", start_url=start_url)
                 return cached_crawl
         
-        # Prepare crawl options according to v1 API
-        params = {
-            'limit': max_pages,
-            'maxDepth': max_depth,
-            'scrapeOptions': {
-                'formats': ['markdown'],
-                'onlyMainContent': True
-            }
-        }
-        
-        if include_patterns:
-            params['includePaths'] = include_patterns
-        
-        if exclude_patterns:
-            params['excludePaths'] = exclude_patterns
-        
         try:
             # Use Firecrawl SDK to crawl
+            # Based on example: app.crawl_url('https://firecrawl.dev', limit=100, scrape_options=ScrapeOptions(formats=['markdown', 'html']))
+            scrape_options = ScrapeOptions(formats=['markdown'])
+            
             result = await asyncio.to_thread(
                 self.app.crawl_url,
                 start_url,
-                **params,
-                wait_until_done=True,
+                limit=max_pages,
+                scrape_options=scrape_options,
                 poll_interval=5
             )
             
@@ -224,22 +210,12 @@ class FirecrawlClient:
                 self.logger.info("Using cached website map", url=url)
                 return cached_map
         
-        # Prepare map options
-        params = {
-            'ignoreSitemap': ignore_sitemap,
-            'includeSubdomains': include_subdomains,
-            'limit': limit
-        }
-        
-        if search:
-            params['search'] = search
-        
         try:
             # Use Firecrawl SDK to map
+            # Simple call - map_url might not accept many parameters
             result = await asyncio.to_thread(
                 self.app.map_url,
-                url,
-                **params
+                url
             )
             
             # Process the map results
@@ -295,20 +271,20 @@ class FirecrawlClient:
                 return cached_extraction
         
         # Prepare extract options
-        params = {
+        extract_config = {
             'schema': schema
         }
         
         if extraction_prompt:
-            params['prompt'] = extraction_prompt
+            extract_config['prompt'] = extraction_prompt
         
         try:
             # Use Firecrawl SDK to extract
             result = await asyncio.to_thread(
                 self.app.scrape_url,
                 url,
-                extractorOptions=params,
-                formats=['extract']
+                formats=['extract'],
+                extract=extract_config
             )
             
             # Process extraction results
