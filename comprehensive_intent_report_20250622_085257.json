@@ -1,0 +1,1583 @@
+{
+  "test_metadata": {
+    "timestamp": "2025-06-22T08:51:40.780324",
+    "total_categories": 14,
+    "total_tests": 117
+  },
+  "category_results": {
+    "Greetings": {
+      "total": 10,
+      "successful": 9,
+      "failed": 1,
+      "errors": 0,
+      "accuracy": 90.0,
+      "avg_confidence": 0.9199999999999999,
+      "avg_response_time": 0.5588587760925293,
+      "failures": [
+        {
+          "message": "hye",
+          "expected": "casual_greeting",
+          "detected": "unclear",
+          "confidence": 0.3
+        }
+      ]
+    },
+    "Business Info": {
+      "total": 10,
+      "successful": 9,
+      "failed": 1,
+      "errors": 0,
+      "accuracy": 90.0,
+      "avg_confidence": 0.9199999999999999,
+      "avg_response_time": 0.5968429327011109,
+      "failures": [
+        {
+          "message": "check out https://onsa.ai",
+          "expected": "provide_business_info",
+          "detected": "analyze_resource",
+          "confidence": 1.0
+        }
+      ]
+    },
+    "ICP Creation": {
+      "total": 10,
+      "successful": 10,
+      "failed": 0,
+      "errors": 0,
+      "accuracy": 100.0,
+      "avg_confidence": 0.9800000000000001,
+      "avg_response_time": 0.5547282934188843,
+      "failures": []
+    },
+    "Prospect Search": {
+      "total": 10,
+      "successful": 10,
+      "failed": 0,
+      "errors": 0,
+      "accuracy": 100.0,
+      "avg_confidence": 0.96,
+      "avg_response_time": 0.587799859046936,
+      "failures": []
+    },
+    "Typos": {
+      "total": 7,
+      "successful": 6,
+      "failed": 1,
+      "errors": 0,
+      "accuracy": 85.71428571428571,
+      "avg_confidence": 0.9428571428571428,
+      "avg_response_time": 0.6047724655696324,
+      "failures": [
+        {
+          "message": "hlep me",
+          "expected": "ask_question",
+          "detected": "unclear",
+          "confidence": 0.9
+        }
+      ]
+    },
+    "Questions": {
+      "total": 7,
+      "successful": 7,
+      "failed": 0,
+      "errors": 0,
+      "accuracy": 100.0,
+      "avg_confidence": 0.9428571428571428,
+      "avg_response_time": 0.5815172876630511,
+      "failures": []
+    },
+    "Navigation": {
+      "total": 5,
+      "successful": 5,
+      "failed": 0,
+      "errors": 0,
+      "accuracy": 100.0,
+      "avg_confidence": 0.9800000000000001,
+      "avg_response_time": 0.5428929805755616,
+      "failures": []
+    },
+    "Memory": {
+      "total": 5,
+      "successful": 4,
+      "failed": 1,
+      "errors": 0,
+      "accuracy": 80.0,
+      "avg_confidence": 0.8400000000000001,
+      "avg_response_time": 0.6646035671234131,
+      "failures": [
+        {
+          "message": "remind me what we did",
+          "expected": "memory_query",
+          "detected": "unclear",
+          "confidence": 0.3
+        }
+      ]
+    },
+    "Ambiguous": {
+      "total": 8,
+      "successful": 4,
+      "failed": 4,
+      "errors": 0,
+      "accuracy": 50.0,
+      "avg_confidence": 0.8,
+      "avg_response_time": 0.6969639658927917,
+      "failures": [
+        {
+          "message": "hi, my company is onsa.ai, create an ICP and find prospects",
+          "expected": "provide_business_info",
+          "detected": "request_icp_creation",
+          "confidence": 1.0
+        },
+        {
+          "message": "find",
+          "expected": "unclear",
+          "detected": "find_prospects",
+          "confidence": 0.9
+        },
+        {
+          "message": "don't create an ICP but I need a customer profile",
+          "expected": "unclear",
+          "detected": "request_icp_creation",
+          "confidence": 0.8
+        },
+        {
+          "message": "I don't want prospects but find me customers",
+          "expected": "unclear",
+          "detected": "find_prospects",
+          "confidence": 1.0
+        }
+      ]
+    },
+    "Mobile Typing": {
+      "total": 10,
+      "successful": 9,
+      "failed": 1,
+      "errors": 0,
+      "accuracy": 90.0,
+      "avg_confidence": 0.9400000000000001,
+      "avg_response_time": 0.6079291820526123,
+      "failures": [
+        {
+          "message": "hellp me",
+          "expected": "ask_question",
+          "detected": "casual_greeting",
+          "confidence": 0.9
+        }
+      ]
+    },
+    "Voice to Text": {
+      "total": 10,
+      "successful": 8,
+      "failed": 2,
+      "errors": 0,
+      "accuracy": 80.0,
+      "avg_confidence": 0.93,
+      "avg_response_time": 0.6396303415298462,
+      "failures": [
+        {
+          "message": "kree ate an ICP",
+          "expected": "request_icp_creation",
+          "detected": "unclear",
+          "confidence": 0.8
+        },
+        {
+          "message": "so uh we're a B2B company and um we need an ICP",
+          "expected": "provide_business_info",
+          "detected": "request_icp_creation",
+          "confidence": 0.9
+        }
+      ]
+    },
+    "Industry Specific": {
+      "total": 10,
+      "successful": 9,
+      "failed": 1,
+      "errors": 0,
+      "accuracy": 90.0,
+      "avg_confidence": 0.96,
+      "avg_response_time": 0.6339472532272339,
+      "failures": [
+        {
+          "message": "need F500 with strong ESG and DEI initiatives",
+          "expected": "find_prospects",
+          "detected": "request_icp_creation",
+          "confidence": 1.0
+        }
+      ]
+    },
+    "Compound Errors": {
+      "total": 5,
+      "successful": 5,
+      "failed": 0,
+      "errors": 0,
+      "accuracy": 100.0,
+      "avg_confidence": 0.96,
+      "avg_response_time": 0.6286659240722656,
+      "failures": []
+    },
+    "Implicit Intent": {
+      "total": 10,
+      "successful": 9,
+      "failed": 1,
+      "errors": 0,
+      "accuracy": 90.0,
+      "avg_confidence": 0.8699999999999999,
+      "avg_response_time": 0.626311469078064,
+      "failures": [
+        {
+          "message": "that's not quite right",
+          "expected": "provide_feedback",
+          "detected": "unclear",
+          "confidence": 0.6
+        }
+      ]
+    }
+  },
+  "detailed_results": [
+    {
+      "category": "Greetings",
+      "message": "hi",
+      "expected": "casual_greeting",
+      "detected": "casual_greeting",
+      "confidence": 1.0,
+      "response_time": 0.6939399242401123,
+      "success": true,
+      "reasoning": "The user's message is a simple and common greeting.",
+      "test_category": "greeting_perfect"
+    },
+    {
+      "category": "Greetings",
+      "message": "hello",
+      "expected": "casual_greeting",
+      "detected": "casual_greeting",
+      "confidence": 1.0,
+      "response_time": 0.4745509624481201,
+      "success": true,
+      "reasoning": "The user's message is a simple greeting.",
+      "test_category": "greeting_perfect"
+    },
+    {
+      "category": "Greetings",
+      "message": "hey there",
+      "expected": "casual_greeting",
+      "detected": "casual_greeting",
+      "confidence": 1.0,
+      "response_time": 0.5374836921691895,
+      "success": true,
+      "reasoning": "The user's message is a simple and common greeting, indicating a casual interaction.",
+      "test_category": "greeting_perfect"
+    },
+    {
+      "category": "Greetings",
+      "message": "good morning",
+      "expected": "casual_greeting",
+      "detected": "casual_greeting",
+      "confidence": 1.0,
+      "response_time": 0.5383949279785156,
+      "success": true,
+      "reasoning": "The user's message is a simple greeting and does not provide any business information or requests related to ICP creation or lead generation.",
+      "test_category": "greeting_perfect"
+    },
+    {
+      "category": "Greetings",
+      "message": "helo",
+      "expected": "casual_greeting",
+      "detected": "casual_greeting",
+      "confidence": 1.0,
+      "response_time": 0.5490210056304932,
+      "success": true,
+      "reasoning": "The user's message 'helo' is a simple and common greeting.",
+      "test_category": "greeting_typos"
+    },
+    {
+      "category": "Greetings",
+      "message": "hye",
+      "expected": "casual_greeting",
+      "detected": "unclear",
+      "confidence": 0.3,
+      "response_time": 0.7866730690002441,
+      "success": false,
+      "reasoning": "Could not determine intent",
+      "test_category": "greeting_typos"
+    },
+    {
+      "category": "Greetings",
+      "message": "helllo",
+      "expected": "casual_greeting",
+      "detected": "casual_greeting",
+      "confidence": 1.0,
+      "response_time": 0.5297129154205322,
+      "success": true,
+      "reasoning": "The user's message 'helllo' is a simple greeting.",
+      "test_category": "greeting_typos"
+    },
+    {
+      "category": "Greetings",
+      "message": "greetigns",
+      "expected": "casual_greeting",
+      "detected": "casual_greeting",
+      "confidence": 1.0,
+      "response_time": 0.47031092643737793,
+      "success": true,
+      "reasoning": "The user's message 'greetigns' is a misspelling of 'greetings', which is a simple casual greeting.",
+      "test_category": "greeting_typos"
+    },
+    {
+      "category": "Greetings",
+      "message": "gud morning",
+      "expected": "casual_greeting",
+      "detected": "casual_greeting",
+      "confidence": 1.0,
+      "response_time": 0.517204999923706,
+      "success": true,
+      "reasoning": "The user's message is a simple greeting ('gud morning').",
+      "test_category": "greeting_typos"
+    },
+    {
+      "category": "Greetings",
+      "message": "yo",
+      "expected": "casual_greeting",
+      "detected": "casual_greeting",
+      "confidence": 0.9,
+      "response_time": 0.49129533767700195,
+      "success": true,
+      "reasoning": "The user's message 'yo' is a simple and common informal greeting.",
+      "test_category": "greeting_casual"
+    },
+    {
+      "category": "Business Info",
+      "message": "My company is onsa.ai",
+      "expected": "provide_business_info",
+      "detected": "provide_business_info",
+      "confidence": 1.0,
+      "response_time": 0.5397157669067383,
+      "success": true,
+      "reasoning": "The user explicitly stated their company name, which is a form of providing business information.",
+      "test_category": "business_perfect"
+    },
+    {
+      "category": "Business Info",
+      "message": "We are a B2B SaaS company",
+      "expected": "provide_business_info",
+      "detected": "provide_business_info",
+      "confidence": 0.9,
+      "response_time": 0.5612170696258545,
+      "success": true,
+      "reasoning": "The user is describing their company as a B2B SaaS company, which falls under providing business information.",
+      "test_category": "business_perfect"
+    },
+    {
+      "category": "Business Info",
+      "message": "Our business provides AI solutions",
+      "expected": "provide_business_info",
+      "detected": "provide_business_info",
+      "confidence": 1.0,
+      "response_time": 0.5449979305267334,
+      "success": true,
+      "reasoning": "The user is describing their business by stating \"Our business provides AI solutions.\"",
+      "test_category": "business_perfect"
+    },
+    {
+      "category": "Business Info",
+      "message": "I run a tech startup",
+      "expected": "provide_business_info",
+      "detected": "provide_business_info",
+      "confidence": 0.9,
+      "response_time": 0.6892509460449219,
+      "success": true,
+      "reasoning": "The user stated 'I run a tech startup', which provides information about their business.",
+      "test_category": "business_perfect"
+    },
+    {
+      "category": "Business Info",
+      "message": "my compnay is",
+      "expected": "provide_business_info",
+      "detected": "provide_business_info",
+      "confidence": 0.8,
+      "response_time": 0.6654000282287598,
+      "success": true,
+      "reasoning": "The user started a sentence indicating they are about to provide information about their company. The current workflow step is 'business_description', which aligns with this intent.",
+      "test_category": "business_typos"
+    },
+    {
+      "category": "Business Info",
+      "message": "we r a saas",
+      "expected": "provide_business_info",
+      "detected": "provide_business_info",
+      "confidence": 0.9,
+      "response_time": 0.5655679702758789,
+      "success": true,
+      "reasoning": "The user stated 'we r a saas', which directly describes their business type. This aligns with the 'provide_business_info' intent.",
+      "test_category": "business_typos"
+    },
+    {
+      "category": "Business Info",
+      "message": "pur business dose",
+      "expected": "provide_business_info",
+      "detected": "provide_business_info",
+      "confidence": 0.8,
+      "response_time": 0.682398796081543,
+      "success": true,
+      "reasoning": "The user's message is a partial phrase that seems intended to provide information about their business, likely a typo for 'our business does' or similar.",
+      "test_category": "business_typos"
+    },
+    {
+      "category": "Business Info",
+      "message": "our companny makes software",
+      "expected": "provide_business_info",
+      "detected": "provide_business_info",
+      "confidence": 1.0,
+      "response_time": 0.589169979095459,
+      "success": true,
+      "reasoning": "The user is describing their business by stating that their company makes software. This falls under providing business information.",
+      "test_category": "business_typos"
+    },
+    {
+      "category": "Business Info",
+      "message": "check out https://onsa.ai",
+      "expected": "provide_business_info",
+      "detected": "analyze_resource",
+      "confidence": 1.0,
+      "response_time": 0.5077028274536133,
+      "success": false,
+      "reasoning": "The user provided a URL, indicating a desire to analyze the content of that website.",
+      "test_category": "business_urls"
+    },
+    {
+      "category": "Business Info",
+      "message": "my site is www.example.com",
+      "expected": "provide_business_info",
+      "detected": "provide_business_info",
+      "confidence": 0.9,
+      "response_time": 0.6230080127716064,
+      "success": true,
+      "reasoning": "The user provided their website URL, which is a form of business information. While not a direct description of services, it's a key piece of data for understanding the business context.",
+      "test_category": "business_urls"
+    },
+    {
+      "category": "ICP Creation",
+      "message": "create an ICP",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 1.0,
+      "response_time": 0.4647369384765625,
+      "success": true,
+      "reasoning": "The user explicitly stated their intent to 'create an ICP'.",
+      "test_category": "icp_perfect"
+    },
+    {
+      "category": "ICP Creation",
+      "message": "build a customer profile",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 1.0,
+      "response_time": 0.7050788402557373,
+      "success": true,
+      "reasoning": "The user explicitly asked to 'build a customer profile', which directly maps to creating an Ideal Customer Profile (ICP). The current workflow step is also 'business_description', making ICP creation the logical next step.",
+      "test_category": "icp_perfect"
+    },
+    {
+      "category": "ICP Creation",
+      "message": "make an ideal customer profile",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 1.0,
+      "response_time": 0.5682361125946045,
+      "success": true,
+      "reasoning": "The user explicitly stated 'make an ideal customer profile', which directly maps to the request_icp_creation intent.",
+      "test_category": "icp_perfect"
+    },
+    {
+      "category": "ICP Creation",
+      "message": "I need an ICP",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 1.0,
+      "response_time": 0.47652101516723633,
+      "success": true,
+      "reasoning": "The user explicitly stated 'I need an ICP', which directly maps to the request_icp_creation intent.",
+      "test_category": "icp_perfect"
+    },
+    {
+      "category": "ICP Creation",
+      "message": "creat an icp",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 1.0,
+      "response_time": 0.499528169631958,
+      "success": true,
+      "reasoning": "The user explicitly stated 'creat an icp', which directly maps to the request_icp_creation intent.",
+      "test_category": "icp_typos"
+    },
+    {
+      "category": "ICP Creation",
+      "message": "bild a profile",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 0.9,
+      "response_time": 0.5242748260498047,
+      "success": true,
+      "reasoning": "The user's message 'bild a profile' is a direct request to create a profile, which in the context of the system's introduction, refers to building an Ideal Customer Profile (ICP).",
+      "test_category": "icp_typos"
+    },
+    {
+      "category": "ICP Creation",
+      "message": "mak customer profile",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 1.0,
+      "response_time": 0.5685608386993408,
+      "success": true,
+      "reasoning": "The user explicitly stated 'mak customer profile', which directly maps to the 'request_icp_creation' intent.",
+      "test_category": "icp_typos"
+    },
+    {
+      "category": "ICP Creation",
+      "message": "create custmer profil",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 0.9,
+      "response_time": 0.5744030475616455,
+      "success": true,
+      "reasoning": "The user explicitly states 'create custmer profil', which directly maps to the intent of creating an Ideal Customer Profile (ICP). The current workflow step is also 'business_description', which is a precursor to ICP creation.",
+      "test_category": "icp_typos"
+    },
+    {
+      "category": "ICP Creation",
+      "message": "help me define my target customers",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 1.0,
+      "response_time": 0.628533124923706,
+      "success": true,
+      "reasoning": "The user explicitly asked to 'define my target customers,' which directly aligns with the creation of an Ideal Customer Profile (ICP).",
+      "test_category": "icp_alternative"
+    },
+    {
+      "category": "ICP Creation",
+      "message": "what does my ideal customer look like?",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 1.0,
+      "response_time": 0.5374100208282471,
+      "success": true,
+      "reasoning": "The user is directly asking 'what does my ideal customer look like?', which is a clear request to create an Ideal Customer Profile (ICP).",
+      "test_category": "icp_alternative"
+    },
+    {
+      "category": "Prospect Search",
+      "message": "find prospects",
+      "expected": "find_prospects",
+      "detected": "find_prospects",
+      "confidence": 1.0,
+      "response_time": 0.5450630187988281,
+      "success": true,
+      "reasoning": "The user explicitly stated 'find prospects', which directly matches the 'find_prospects' intent category.",
+      "test_category": "prospect_perfect"
+    },
+    {
+      "category": "Prospect Search",
+      "message": "search for leads",
+      "expected": "find_prospects",
+      "detected": "find_prospects",
+      "confidence": 1.0,
+      "response_time": 0.552440881729126,
+      "success": true,
+      "reasoning": "The user explicitly stated 'search for leads', which directly maps to the 'find_prospects' intent.",
+      "test_category": "prospect_perfect"
+    },
+    {
+      "category": "Prospect Search",
+      "message": "get me some customers",
+      "expected": "find_prospects",
+      "detected": "find_prospects",
+      "confidence": 0.9,
+      "response_time": 0.5786170959472656,
+      "success": true,
+      "reasoning": "The user explicitly stated 'get me some customers', which directly translates to a request to find prospects or leads.",
+      "test_category": "prospect_perfect"
+    },
+    {
+      "category": "Prospect Search",
+      "message": "I need leads",
+      "expected": "find_prospects",
+      "detected": "find_prospects",
+      "confidence": 1.0,
+      "response_time": 0.673537015914917,
+      "success": true,
+      "reasoning": "The user explicitly stated 'I need leads', which directly maps to the 'find_prospects' intent.",
+      "test_category": "prospect_perfect"
+    },
+    {
+      "category": "Prospect Search",
+      "message": "find prospcts",
+      "expected": "find_prospects",
+      "detected": "find_prospects",
+      "confidence": 1.0,
+      "response_time": 0.564640998840332,
+      "success": true,
+      "reasoning": "The user explicitly stated 'find prospects', which directly maps to the 'find_prospects' intent.",
+      "test_category": "prospect_typos"
+    },
+    {
+      "category": "Prospect Search",
+      "message": "serch for leads",
+      "expected": "find_prospects",
+      "detected": "find_prospects",
+      "confidence": 1.0,
+      "response_time": 0.5887198448181152,
+      "success": true,
+      "reasoning": "The user explicitly used the word 'leads', which directly maps to the 'find_prospects' intent.",
+      "test_category": "prospect_typos"
+    },
+    {
+      "category": "Prospect Search",
+      "message": "get me custmers",
+      "expected": "find_prospects",
+      "detected": "find_prospects",
+      "confidence": 0.9,
+      "response_time": 0.5706748962402344,
+      "success": true,
+      "reasoning": "The user explicitly stated 'get me customers', which is a direct request to find prospects or leads.",
+      "test_category": "prospect_typos"
+    },
+    {
+      "category": "Prospect Search",
+      "message": "I need leads ASAP",
+      "expected": "find_prospects",
+      "detected": "find_prospects",
+      "confidence": 0.9,
+      "response_time": 0.6927728652954102,
+      "success": true,
+      "reasoning": "The user explicitly stated 'I need leads ASAP', which directly maps to the 'find_prospects' intent.",
+      "test_category": "prospect_urgent"
+    },
+    {
+      "category": "Prospect Search",
+      "message": "find customers now",
+      "expected": "find_prospects",
+      "detected": "find_prospects",
+      "confidence": 1.0,
+      "response_time": 0.5648250579833984,
+      "success": true,
+      "reasoning": "The user explicitly stated 'find customers now', which directly maps to the 'find_prospects' intent.",
+      "test_category": "prospect_urgent"
+    },
+    {
+      "category": "Prospect Search",
+      "message": "get me prospects immediately",
+      "expected": "find_prospects",
+      "detected": "find_prospects",
+      "confidence": 0.9,
+      "response_time": 0.5467069149017334,
+      "success": true,
+      "reasoning": "The user explicitly stated 'get me prospects immediately', which directly maps to the 'find_prospects' intent.",
+      "test_category": "prospect_urgent"
+    },
+    {
+      "category": "Typos",
+      "message": "hlep me",
+      "expected": "ask_question",
+      "detected": "unclear",
+      "confidence": 0.9,
+      "response_time": 0.648367166519165,
+      "success": false,
+      "reasoning": "The user's message 'hlep me' is a misspelling of 'help me' and does not provide enough information to determine their specific intent within the context of the sales lead generation system. It's a request for assistance but lacks detail.",
+      "test_category": "typos_help"
+    },
+    {
+      "category": "Typos",
+      "message": "wat is icp",
+      "expected": "ask_question",
+      "detected": "ask_question",
+      "confidence": 1.0,
+      "response_time": 0.6600198745727539,
+      "success": true,
+      "reasoning": "The user is asking for a definition of 'ICP', which is a question about the system's process or terminology.",
+      "test_category": "typos_question"
+    },
+    {
+      "category": "Typos",
+      "message": "crete customer profle",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 1.0,
+      "response_time": 0.5733580589294434,
+      "success": true,
+      "reasoning": "The user explicitly asked to 'crete customer profle', which is a direct request to create an Ideal Customer Profile.",
+      "test_category": "typos_creation"
+    },
+    {
+      "category": "Typos",
+      "message": "finde leads",
+      "expected": "find_prospects",
+      "detected": "find_prospects",
+      "confidence": 0.9,
+      "response_time": 0.5198609828948975,
+      "success": true,
+      "reasoning": "The user explicitly stated 'finde leads' which directly maps to the 'find_prospects' intent.",
+      "test_category": "typos_search"
+    },
+    {
+      "category": "Typos",
+      "message": "my buisness is",
+      "expected": "provide_business_info",
+      "detected": "provide_business_info",
+      "confidence": 0.9,
+      "response_time": 0.511897087097168,
+      "success": true,
+      "reasoning": "The user started a sentence indicating they are about to provide business information.",
+      "test_category": "typos_business"
+    },
+    {
+      "category": "Typos",
+      "message": "helllo, cna you creat an icp fr my compnay?",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 1.0,
+      "response_time": 0.6147000789642334,
+      "success": true,
+      "reasoning": "The user explicitly asked to 'creat an icp fr my compnay'. This directly aligns with the 'request_icp_creation' intent.",
+      "test_category": "typos_multiple"
+    },
+    {
+      "category": "Typos",
+      "message": "i ned halp wit findng custmers",
+      "expected": "find_prospects",
+      "detected": "find_prospects",
+      "confidence": 0.9,
+      "response_time": 0.7052040100097656,
+      "success": true,
+      "reasoning": "The user explicitly states they need help 'finding customers,' which directly aligns with the 'find_prospects' intent.",
+      "test_category": "typos_multiple"
+    },
+    {
+      "category": "Questions",
+      "message": "what can you do?",
+      "expected": "ask_question",
+      "detected": "ask_question",
+      "confidence": 1.0,
+      "response_time": 0.5265278816223145,
+      "success": true,
+      "reasoning": "The user is asking a general question about the capabilities of the system.",
+      "test_category": "question_capability"
+    },
+    {
+      "category": "Questions",
+      "message": "how does this work?",
+      "expected": "ask_question",
+      "detected": "ask_question",
+      "confidence": 1.0,
+      "response_time": 0.5013389587402344,
+      "success": true,
+      "reasoning": "The user is asking a general question about how the system works.",
+      "test_category": "question_process"
+    },
+    {
+      "category": "Questions",
+      "message": "what is an ICP?",
+      "expected": "ask_question",
+      "detected": "ask_question",
+      "confidence": 1.0,
+      "response_time": 0.6700572967529297,
+      "success": true,
+      "reasoning": "The user is asking for a definition of 'ICP', which is a general question about the system's terminology and process.",
+      "test_category": "question_definition"
+    },
+    {
+      "category": "Questions",
+      "message": "help me understand",
+      "expected": "ask_question",
+      "detected": "ask_question",
+      "confidence": 0.9,
+      "response_time": 0.6844160556793213,
+      "success": true,
+      "reasoning": "The user explicitly stated 'help me understand', which is a direct request for information about the system's capabilities or processes.",
+      "test_category": "question_help"
+    },
+    {
+      "category": "Questions",
+      "message": "what data sources do you use?",
+      "expected": "ask_question",
+      "detected": "ask_question",
+      "confidence": 0.9,
+      "response_time": 0.5055539608001709,
+      "success": true,
+      "reasoning": "The user is asking a direct question about the data sources used by the system, which falls under general inquiries about capabilities.",
+      "test_category": "question_technical"
+    },
+    {
+      "category": "Questions",
+      "message": "how accurate are the results?",
+      "expected": "ask_question",
+      "detected": "ask_question",
+      "confidence": 0.9,
+      "response_time": 0.6035459041595459,
+      "success": true,
+      "reasoning": "The user is asking a question about the accuracy of the results, which falls under general questions about the system's capabilities.",
+      "test_category": "question_technical"
+    },
+    {
+      "category": "Questions",
+      "message": "what's the difference between prospects and leads?",
+      "expected": "ask_question",
+      "detected": "ask_question",
+      "confidence": 0.9,
+      "response_time": 0.5791809558868408,
+      "success": true,
+      "reasoning": "The user is asking for a clarification on terminology related to the sales process ('prospects' vs. 'leads'), which falls under a general question about the system's capabilities and process.",
+      "test_category": "question_technical"
+    },
+    {
+      "category": "Navigation",
+      "message": "go back",
+      "expected": "navigate_workflow",
+      "detected": "navigate_workflow",
+      "confidence": 1.0,
+      "response_time": 0.5029540061950684,
+      "success": true,
+      "reasoning": "The user explicitly stated 'go back', indicating a desire to navigate to a previous step in the workflow.",
+      "test_category": "navigation_perfect"
+    },
+    {
+      "category": "Navigation",
+      "message": "start over",
+      "expected": "navigate_workflow",
+      "detected": "navigate_workflow",
+      "confidence": 1.0,
+      "response_time": 0.5336489677429199,
+      "success": true,
+      "reasoning": "The user explicitly stated 'start over', which indicates a desire to reset the current process or workflow.",
+      "test_category": "navigation_perfect"
+    },
+    {
+      "category": "Navigation",
+      "message": "skip this step",
+      "expected": "navigate_workflow",
+      "detected": "navigate_workflow",
+      "confidence": 1.0,
+      "response_time": 0.6715428829193115,
+      "success": true,
+      "reasoning": "The user explicitly stated 'skip this step', indicating a desire to move past the current workflow stage.",
+      "test_category": "navigation_perfect"
+    },
+    {
+      "category": "Navigation",
+      "message": "previous step",
+      "expected": "navigate_workflow",
+      "detected": "navigate_workflow",
+      "confidence": 0.9,
+      "response_time": 0.4797239303588867,
+      "success": true,
+      "reasoning": "The user explicitly used the word 'previous step', indicating a desire to navigate back in the workflow.",
+      "test_category": "navigation_perfect"
+    },
+    {
+      "category": "Navigation",
+      "message": "restart",
+      "expected": "navigate_workflow",
+      "detected": "navigate_workflow",
+      "confidence": 1.0,
+      "response_time": 0.5265951156616211,
+      "success": true,
+      "reasoning": "The user explicitly used the word 'restart', indicating a desire to begin the process again.",
+      "test_category": "navigation_variation"
+    },
+    {
+      "category": "Memory",
+      "message": "what was my last ICP?",
+      "expected": "memory_query",
+      "detected": "memory_query",
+      "confidence": 1.0,
+      "response_time": 0.6954009532928467,
+      "success": true,
+      "reasoning": "The user is asking about their 'last ICP', which directly relates to querying past information or previous work within the system.",
+      "test_category": "memory_perfect"
+    },
+    {
+      "category": "Memory",
+      "message": "show me previous work",
+      "expected": "memory_query",
+      "detected": "memory_query",
+      "confidence": 0.9,
+      "response_time": 0.6821787357330322,
+      "success": true,
+      "reasoning": "The user's message 'show me previous work' directly indicates a request to recall or display past activities or results from the system.",
+      "test_category": "memory_perfect"
+    },
+    {
+      "category": "Memory",
+      "message": "what did we discuss?",
+      "expected": "memory_query",
+      "detected": "memory_query",
+      "confidence": 1.0,
+      "response_time": 0.553098201751709,
+      "success": true,
+      "reasoning": "The user is asking what was previously discussed, which falls under querying past conversations or memory.",
+      "test_category": "memory_perfect"
+    },
+    {
+      "category": "Memory",
+      "message": "remind me what we did",
+      "expected": "memory_query",
+      "detected": "unclear",
+      "confidence": 0.3,
+      "response_time": 0.6883389949798584,
+      "success": false,
+      "reasoning": "Could not determine intent",
+      "test_category": "memory_perfect"
+    },
+    {
+      "category": "Memory",
+      "message": "what was my company name?",
+      "expected": "memory_query",
+      "detected": "memory_query",
+      "confidence": 1.0,
+      "response_time": 0.7040009498596191,
+      "success": true,
+      "reasoning": "The user is asking a question about their company name, which implies they are trying to recall information from a previous interaction or session.",
+      "test_category": "memory_context"
+    },
+    {
+      "category": "Ambiguous",
+      "message": "hi, my company is onsa.ai, create an ICP and find prospects",
+      "expected": "provide_business_info",
+      "detected": "request_icp_creation",
+      "confidence": 1.0,
+      "response_time": 0.7324306964874268,
+      "success": false,
+      "reasoning": "The user provided their company name and explicitly asked to create an ICP and find prospects. The mention of 'create an ICP' triggers the 'request_icp_creation' intent, which takes precedence over 'provide_business_info' when both are present.",
+      "test_category": "ambiguous_multiple"
+    },
+    {
+      "category": "Ambiguous",
+      "message": "hello, I need help creating a profile and searching for leads",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 0.9,
+      "response_time": 0.629875898361206,
+      "success": true,
+      "reasoning": "The user explicitly states they need help creating a profile, which directly maps to the 'request_icp_creation' intent. The mention of searching for leads also indicates a desire to move forward with the sales lead generation process.",
+      "test_category": "ambiguous_multiple"
+    },
+    {
+      "category": "Ambiguous",
+      "message": "create",
+      "expected": "unclear",
+      "detected": "unclear",
+      "confidence": 0.3,
+      "response_time": 0.783045768737793,
+      "success": true,
+      "reasoning": "Could not determine intent",
+      "test_category": "ambiguous_vague"
+    },
+    {
+      "category": "Ambiguous",
+      "message": "find",
+      "expected": "unclear",
+      "detected": "find_prospects",
+      "confidence": 0.9,
+      "response_time": 0.7968850135803223,
+      "success": false,
+      "reasoning": "The user's message 'find' directly maps to the 'find_prospects' intent, especially given the system's context of lead generation.",
+      "test_category": "ambiguous_vague"
+    },
+    {
+      "category": "Ambiguous",
+      "message": "change",
+      "expected": "unclear",
+      "detected": "unclear",
+      "confidence": 0.6,
+      "response_time": 0.6964921951293945,
+      "success": true,
+      "reasoning": "The user's input 'change' is very vague and does not provide enough context to determine their specific intent within the sales lead generation process. It could refer to changing business information, modifying the ICP, altering search criteria, or something else entirely.",
+      "test_category": "ambiguous_vague"
+    },
+    {
+      "category": "Ambiguous",
+      "message": "help",
+      "expected": "ask_question",
+      "detected": "ask_question",
+      "confidence": 0.9,
+      "response_time": 0.6518230438232422,
+      "success": true,
+      "reasoning": "The user's message 'help' is a general request for assistance or information about the system's capabilities, which falls under asking a question.",
+      "test_category": "ambiguous_vague"
+    },
+    {
+      "category": "Ambiguous",
+      "message": "don't create an ICP but I need a customer profile",
+      "expected": "unclear",
+      "detected": "request_icp_creation",
+      "confidence": 0.8,
+      "response_time": 0.6386971473693848,
+      "success": false,
+      "reasoning": "The user explicitly stated they do not want an ICP but then immediately asked for a 'customer profile', which is functionally equivalent to an ICP in this context, indicating a desire to proceed with that step.",
+      "test_category": "ambiguous_contradictory"
+    },
+    {
+      "category": "Ambiguous",
+      "message": "I don't want prospects but find me customers",
+      "expected": "unclear",
+      "detected": "find_prospects",
+      "confidence": 1.0,
+      "response_time": 0.6464619636535645,
+      "success": false,
+      "reasoning": "The user explicitly states they are looking for 'customers' which is synonymous with prospects in this context and negates the desire for prospects, indicating they want to find people/companies.",
+      "test_category": "ambiguous_contradictory"
+    },
+    {
+      "category": "Mobile Typing",
+      "message": "create and ICP",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 1.0,
+      "response_time": 0.5173177719116211,
+      "success": true,
+      "reasoning": "The user explicitly stated 'create and ICP', which directly maps to the request_icp_creation intent.",
+      "test_category": "mobile_autocorrect"
+    },
+    {
+      "category": "Mobile Typing",
+      "message": "fund prospects",
+      "expected": "find_prospects",
+      "detected": "find_prospects",
+      "confidence": 0.8,
+      "response_time": 0.7518970966339111,
+      "success": true,
+      "reasoning": "The user's message 'fund prospects' is a direct request to find prospects, which aligns with the 'find_prospects' intent. While 'fund' might seem ambiguous, in the context of lead generation and sales, it's commonly understood as finding or sourcing prospects.",
+      "test_category": "mobile_autocorrect"
+    },
+    {
+      "category": "Mobile Typing",
+      "message": "I need am ICP",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 1.0,
+      "response_time": 0.4961268901824951,
+      "success": true,
+      "reasoning": "The user explicitly stated 'I need am ICP', which directly maps to the intent of creating an Ideal Customer Profile.",
+      "test_category": "mobile_autocorrect"
+    },
+    {
+      "category": "Mobile Typing",
+      "message": "shoe me prospects",
+      "expected": "find_prospects",
+      "detected": "find_prospects",
+      "confidence": 0.9,
+      "response_time": 0.6866707801818848,
+      "success": true,
+      "reasoning": "The user explicitly used the phrase 'shoe me prospects', which is a direct request to find or show them prospects.",
+      "test_category": "mobile_autocorrect"
+    },
+    {
+      "category": "Mobile Typing",
+      "message": "cteate an ICP",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 1.0,
+      "response_time": 0.5011141300201416,
+      "success": true,
+      "reasoning": "The user explicitly stated 'cteate an ICP', which directly maps to the request_icp_creation intent.",
+      "test_category": "mobile_fat_finger"
+    },
+    {
+      "category": "Mobile Typing",
+      "message": "fknd prospects",
+      "expected": "find_prospects",
+      "detected": "find_prospects",
+      "confidence": 0.9,
+      "response_time": 0.7160723209381104,
+      "success": true,
+      "reasoning": "The user explicitly mentioned 'prospects' in their message, indicating a desire to find leads.",
+      "test_category": "mobile_fat_finger"
+    },
+    {
+      "category": "Mobile Typing",
+      "message": "my conpany is",
+      "expected": "provide_business_info",
+      "detected": "provide_business_info",
+      "confidence": 0.9,
+      "response_time": 0.5620057582855225,
+      "success": true,
+      "reasoning": "The user started a sentence indicating they are about to describe their company, which aligns with the 'provide_business_info' intent. The current workflow step is 'business_description', making this the most logical next step.",
+      "test_category": "mobile_fat_finger"
+    },
+    {
+      "category": "Mobile Typing",
+      "message": "hellp me",
+      "expected": "ask_question",
+      "detected": "casual_greeting",
+      "confidence": 0.9,
+      "response_time": 0.6457490921020508,
+      "success": false,
+      "reasoning": "The user's message 'hellp me' is a misspelling of 'help me', which in this context, following a greeting, is likely a casual attempt to engage or ask for assistance without a specific task in mind. It's not a clear request for any of the defined tasks.",
+      "test_category": "mobile_fat_finger"
+    },
+    {
+      "category": "Mobile Typing",
+      "message": "createanICP",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 1.0,
+      "response_time": 0.548490047454834,
+      "success": true,
+      "reasoning": "The user explicitly stated 'createanICP', which directly maps to the intent of creating an Ideal Customer Profile.",
+      "test_category": "mobile_missing_spaces"
+    },
+    {
+      "category": "Mobile Typing",
+      "message": "findprospects",
+      "expected": "find_prospects",
+      "detected": "find_prospects",
+      "confidence": 1.0,
+      "response_time": 0.6538479328155518,
+      "success": true,
+      "reasoning": "The user explicitly stated 'findprospects'. This directly maps to the 'find_prospects' intent.",
+      "test_category": "mobile_missing_spaces"
+    },
+    {
+      "category": "Voice to Text",
+      "message": "create an I see pea",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 1.0,
+      "response_time": 0.5315189361572266,
+      "success": true,
+      "reasoning": "The user explicitly asked to 'create an I see pea', which is a clear request to create an Ideal Customer Profile.",
+      "test_category": "voice_homophone"
+    },
+    {
+      "category": "Voice to Text",
+      "message": "find sum prospects",
+      "expected": "find_prospects",
+      "detected": "find_prospects",
+      "confidence": 1.0,
+      "response_time": 0.5644640922546387,
+      "success": true,
+      "reasoning": "The user explicitly stated 'find sum prospects', which directly maps to the 'find_prospects' intent.",
+      "test_category": "voice_homophone"
+    },
+    {
+      "category": "Voice to Text",
+      "message": "my company cells software",
+      "expected": "provide_business_info",
+      "detected": "provide_business_info",
+      "confidence": 0.9,
+      "response_time": 0.6548681259155273,
+      "success": true,
+      "reasoning": "The user explicitly described their company's product as 'software'. This falls under providing business information.",
+      "test_category": "voice_homophone"
+    },
+    {
+      "category": "Voice to Text",
+      "message": "I need too find customers",
+      "expected": "find_prospects",
+      "detected": "find_prospects",
+      "confidence": 0.9,
+      "response_time": 0.6707479953765869,
+      "success": true,
+      "reasoning": "The user explicitly states 'I need too find customers', which directly maps to the 'find_prospects' intent.",
+      "test_category": "voice_homophone"
+    },
+    {
+      "category": "Voice to Text",
+      "message": "kree ate an ICP",
+      "expected": "request_icp_creation",
+      "detected": "unclear",
+      "confidence": 0.8,
+      "response_time": 0.6225109100341797,
+      "success": false,
+      "reasoning": "The user's message 'kree ate an ICP' is not a standard phrase and does not clearly indicate a request to create an ICP, provide business information, or any other defined intent. It is likely a typo or an incomplete thought.",
+      "test_category": "voice_phonetic"
+    },
+    {
+      "category": "Voice to Text",
+      "message": "fynd prospects",
+      "expected": "find_prospects",
+      "detected": "find_prospects",
+      "confidence": 1.0,
+      "response_time": 0.846682071685791,
+      "success": true,
+      "reasoning": "The user explicitly stated 'fynd prospects', which directly maps to the 'find_prospects' intent. The system is currently in the 'business_description' workflow step, and finding prospects typically follows ICP creation. However, the user's direct request indicates a desire to move towards prospect generation.",
+      "test_category": "voice_phonetic"
+    },
+    {
+      "category": "Voice to Text",
+      "message": "bild a profile",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 0.9,
+      "response_time": 0.5729846954345703,
+      "success": true,
+      "reasoning": "The user's message 'bild a profile' is a direct request to create a profile, which in the context of the sales lead generation system, refers to creating an Ideal Customer Profile (ICP).",
+      "test_category": "voice_phonetic"
+    },
+    {
+      "category": "Voice to Text",
+      "message": "yeah so basically I need you to create an ICP for my company which sells software to other businesses",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 1.0,
+      "response_time": 0.6858251094818115,
+      "success": true,
+      "reasoning": "The user explicitly stated 'I need you to create an ICP for my company' and provided a brief description of their business type (sells software to other businesses).",
+      "test_category": "voice_run_on"
+    },
+    {
+      "category": "Voice to Text",
+      "message": "um can you like find me some prospects I guess for my business",
+      "expected": "find_prospects",
+      "detected": "find_prospects",
+      "confidence": 0.9,
+      "response_time": 0.6852233409881592,
+      "success": true,
+      "reasoning": "The user explicitly asked to 'find me some prospects'.",
+      "test_category": "voice_filler_words"
+    },
+    {
+      "category": "Voice to Text",
+      "message": "so uh we're a B2B company and um we need an ICP",
+      "expected": "provide_business_info",
+      "detected": "request_icp_creation",
+      "confidence": 0.9,
+      "response_time": 0.5614781379699707,
+      "success": false,
+      "reasoning": "The user explicitly states 'we need an ICP', which directly maps to the request_icp_creation intent. They also provide context about their business type (B2B company).",
+      "test_category": "voice_filler_words"
+    },
+    {
+      "category": "Industry Specific",
+      "message": "need ICP for b2b saas targeting smb with arr >1m",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 0.9,
+      "response_time": 0.5757057666778564,
+      "success": true,
+      "reasoning": "The user explicitly states 'need ICP' and provides specific criteria (B2B SaaS, SMB, ARR >1m), indicating a clear request to create an Ideal Customer Profile.",
+      "test_category": "industry_tech_abbrev"
+    },
+    {
+      "category": "Industry Specific",
+      "message": "find prospects: series A/B, 50+ eng, using k8s",
+      "expected": "find_prospects",
+      "detected": "find_prospects",
+      "confidence": 1.0,
+      "response_time": 0.5929322242736816,
+      "success": true,
+      "reasoning": "The user explicitly stated 'find prospects' and provided specific criteria (series A/B, 50+ eng, using k8s).",
+      "test_category": "industry_tech_specific"
+    },
+    {
+      "category": "Industry Specific",
+      "message": "our PLG motion targets developers at scale-ups",
+      "expected": "provide_business_info",
+      "detected": "provide_business_info",
+      "confidence": 0.9,
+      "response_time": 0.6832859516143799,
+      "success": true,
+      "reasoning": "The user is describing their business's go-to-market strategy by mentioning their PLG motion and target customer segment (developers at scale-ups). This falls under providing business information.",
+      "test_category": "industry_tech_jargon"
+    },
+    {
+      "category": "Industry Specific",
+      "message": "create ICP for fintechs with AUM > 100M",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 1.0,
+      "response_time": 0.5780880451202393,
+      "success": true,
+      "reasoning": "The user explicitly asked to 'create ICP' and provided specific criteria for it (fintechs with AUM > 100M).",
+      "test_category": "industry_finance"
+    },
+    {
+      "category": "Industry Specific",
+      "message": "find RIAs and BDs in wealth management",
+      "expected": "find_prospects",
+      "detected": "find_prospects",
+      "confidence": 1.0,
+      "response_time": 0.6293871402740479,
+      "success": true,
+      "reasoning": "The user is explicitly asking to find specific types of professionals ('RIAs and BDs') within a particular industry ('wealth management'), which directly maps to the 'find_prospects' intent.",
+      "test_category": "industry_finance_abbrev"
+    },
+    {
+      "category": "Industry Specific",
+      "message": "we provide RegTech solutions for KYC/AML",
+      "expected": "provide_business_info",
+      "detected": "provide_business_info",
+      "confidence": 0.9,
+      "response_time": 0.5462431907653809,
+      "success": true,
+      "reasoning": "The user is describing their business by stating they provide RegTech solutions for KYC/AML.",
+      "test_category": "industry_finance_jargon"
+    },
+    {
+      "category": "Industry Specific",
+      "message": "need hospitals with 200+ beds using EHR/EMR",
+      "expected": "find_prospects",
+      "detected": "find_prospects",
+      "confidence": 1.0,
+      "response_time": 0.7683649063110352,
+      "success": true,
+      "reasoning": "The user is specifying criteria (hospitals, 200+ beds, EHR/EMR) that are directly applicable to finding prospects.",
+      "test_category": "industry_healthcare"
+    },
+    {
+      "category": "Industry Specific",
+      "message": "create ICP for HIPAA-compliant telehealth",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 1.0,
+      "response_time": 0.602931022644043,
+      "success": true,
+      "reasoning": "The user explicitly asked to 'create ICP' and provided a specific industry 'HIPAA-compliant telehealth'.",
+      "test_category": "industry_healthcare_compliance"
+    },
+    {
+      "category": "Industry Specific",
+      "message": "our RCM solution helps with prior auth",
+      "expected": "provide_business_info",
+      "detected": "provide_business_info",
+      "confidence": 0.9,
+      "response_time": 0.575808048248291,
+      "success": true,
+      "reasoning": "The user is describing their company's solution and what it helps with, which falls under providing business information.",
+      "test_category": "industry_healthcare_abbrev"
+    },
+    {
+      "category": "Industry Specific",
+      "message": "need F500 with strong ESG and DEI initiatives",
+      "expected": "find_prospects",
+      "detected": "request_icp_creation",
+      "confidence": 1.0,
+      "response_time": 0.7867262363433838,
+      "success": false,
+      "reasoning": "The user is specifying criteria ('F500 with strong ESG and DEI initiatives') for an Ideal Customer Profile (ICP), indicating a request to create or refine one.",
+      "test_category": "industry_generic_abbrev"
+    },
+    {
+      "category": "Compound Errors",
+      "message": "pls creat an IPC for my compny",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 1.0,
+      "response_time": 0.6323459148406982,
+      "success": true,
+      "reasoning": "The user explicitly stated 'pls creat an IPC for my compny', which directly maps to the request_icp_creation intent.",
+      "test_category": "compound_multiple_typos"
+    },
+    {
+      "category": "Compound Errors",
+      "message": "i nees to fnd prospcts quikly",
+      "expected": "find_prospects",
+      "detected": "find_prospects",
+      "confidence": 0.9,
+      "response_time": 0.7728750705718994,
+      "success": true,
+      "reasoning": "The user explicitly states they 'need to find prospects quickly', which directly maps to the 'find_prospects' intent.",
+      "test_category": "compound_many_typos"
+    },
+    {
+      "category": "Compound Errors",
+      "message": "hlp me mak custmer profle",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 0.9,
+      "response_time": 0.5791957378387451,
+      "success": true,
+      "reasoning": "The user explicitly stated 'mak custmer profle', which directly maps to the intent of creating an Ideal Customer Profile (ICP). This is a clear request to start the ICP creation process.",
+      "test_category": "compound_severe_typos"
+    },
+    {
+      "category": "Compound Errors",
+      "message": "can u creating icp 4 me company",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 1.0,
+      "response_time": 0.5599608421325684,
+      "success": true,
+      "reasoning": "The user explicitly asked to create an ICP for their company.",
+      "test_category": "compound_typo_grammar"
+    },
+    {
+      "category": "Compound Errors",
+      "message": "i wanting find prospect for sell",
+      "expected": "find_prospects",
+      "detected": "find_prospects",
+      "confidence": 1.0,
+      "response_time": 0.598952054977417,
+      "success": true,
+      "reasoning": "The user explicitly states they 'wanting find prospect for sell', which directly maps to the 'find_prospects' intent.",
+      "test_category": "compound_typo_grammar"
+    },
+    {
+      "category": "Implicit Intent",
+      "message": "I need to know who my ideal customers are",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 1.0,
+      "response_time": 0.619880199432373,
+      "success": true,
+      "reasoning": "The user explicitly states \"I need to know who my ideal customers are\", which directly translates to a request for ICP creation.",
+      "test_category": "implicit_icp"
+    },
+    {
+      "category": "Implicit Intent",
+      "message": "help me figure out who to target",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 0.9,
+      "response_time": 0.6080410480499268,
+      "success": true,
+      "reasoning": "The user explicitly states 'help me figure out who to target', which directly maps to the intent of creating an Ideal Customer Profile (ICP) to identify target audiences.",
+      "test_category": "implicit_icp"
+    },
+    {
+      "category": "Implicit Intent",
+      "message": "what kind of companies should I sell to?",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 0.9,
+      "response_time": 0.6651198863983154,
+      "success": true,
+      "reasoning": "The user is asking a direct question about what kind of companies they should sell to, which directly relates to creating an Ideal Customer Profile (ICP). The current workflow step is 'business_description', and the system is designed to first understand the business to create an ICP. This question is a natural lead-in to that process.",
+      "test_category": "implicit_icp_question"
+    },
+    {
+      "category": "Implicit Intent",
+      "message": "I need customers",
+      "expected": "find_prospects",
+      "detected": "find_prospects",
+      "confidence": 0.9,
+      "response_time": 0.9299707412719727,
+      "success": true,
+      "reasoning": "The user explicitly stated 'I need customers', which directly translates to a need for finding prospects or leads. The current workflow step is 'business_description', and the user has not provided business information or requested ICP creation yet, so finding prospects at this stage is premature.",
+      "test_category": "implicit_prospects"
+    },
+    {
+      "category": "Implicit Intent",
+      "message": "who should I reach out to?",
+      "expected": "find_prospects",
+      "detected": "find_prospects",
+      "confidence": 0.9,
+      "response_time": 0.5586929321289062,
+      "success": true,
+      "reasoning": "The user is directly asking 'who should I reach out to?', which is a clear request to find prospects or leads.",
+      "test_category": "implicit_prospects_question"
+    },
+    {
+      "category": "Implicit Intent",
+      "message": "get me some companies to contact",
+      "expected": "find_prospects",
+      "detected": "find_prospects",
+      "confidence": 1.0,
+      "response_time": 0.70343017578125,
+      "success": true,
+      "reasoning": "The user explicitly asked to 'get me some companies to contact', which directly maps to the 'find_prospects' intent.",
+      "test_category": "implicit_prospects"
+    },
+    {
+      "category": "Implicit Intent",
+      "message": "let me tell you what we do",
+      "expected": "provide_business_info",
+      "detected": "provide_business_info",
+      "confidence": 0.9,
+      "response_time": 0.5197441577911377,
+      "success": true,
+      "reasoning": "The user explicitly states 'let me tell you what we do', indicating they want to provide information about their business.",
+      "test_category": "implicit_business"
+    },
+    {
+      "category": "Implicit Intent",
+      "message": "so here's the thing about our company",
+      "expected": "provide_business_info",
+      "detected": "provide_business_info",
+      "confidence": 0.8,
+      "response_time": 0.53786301612854,
+      "success": true,
+      "reasoning": "The user explicitly states \"so here's the thing about our company\", indicating they are about to provide information about their business. This aligns with the 'provide_business_info' intent, which is the current workflow step.",
+      "test_category": "implicit_business"
+    },
+    {
+      "category": "Implicit Intent",
+      "message": "we're in the business of",
+      "expected": "provide_business_info",
+      "detected": "provide_business_info",
+      "confidence": 0.8,
+      "response_time": 0.5107467174530029,
+      "success": true,
+      "reasoning": "The user's message \"we're in the business of\" directly indicates they are about to describe their business or services.",
+      "test_category": "implicit_business"
+    },
+    {
+      "category": "Implicit Intent",
+      "message": "that's not quite right",
+      "expected": "provide_feedback",
+      "detected": "unclear",
+      "confidence": 0.6,
+      "response_time": 0.6096258163452148,
+      "success": false,
+      "reasoning": "The user's statement \"that's not quite right\" is vague and doesn't provide enough context to determine what specific part of the previous assistant message is incorrect. It could be feedback on the initial description of the system or an indication that something is missing. Without further clarification, the intent cannot be definitively categorized.",
+      "test_category": "implicit_feedback"
+    }
+  ],
+  "error_analysis": {
+    "common_misclassifications": [
+      [
+        "provide_business_info \u2192 request_icp_creation",
+        2
+      ],
+      [
+        "unclear \u2192 find_prospects",
+        2
+      ],
+      [
+        "casual_greeting \u2192 unclear",
+        1
+      ],
+      [
+        "provide_business_info \u2192 analyze_resource",
+        1
+      ],
+      [
+        "ask_question \u2192 unclear",
+        1
+      ],
+      [
+        "memory_query \u2192 unclear",
+        1
+      ],
+      [
+        "unclear \u2192 request_icp_creation",
+        1
+      ],
+      [
+        "ask_question \u2192 casual_greeting",
+        1
+      ],
+      [
+        "request_icp_creation \u2192 unclear",
+        1
+      ],
+      [
+        "find_prospects \u2192 request_icp_creation",
+        1
+      ]
+    ]
+  },
+  "performance_metrics": {
+    "avg_response_time": 0.6078720805991409,
+    "min_response_time": 0.4647369384765625,
+    "max_response_time": 0.9299707412719727,
+    "p95_response_time": 0.783045768737793
+  },
+  "overall_summary": {
+    "total_tests": 117,
+    "successful_tests": 104,
+    "failed_tests": 13,
+    "accuracy_percentage": 88.88888888888889,
+    "total_runtime": 77.1011369228363,
+    "avg_test_time": 0.6589840762635581
+  }
+}

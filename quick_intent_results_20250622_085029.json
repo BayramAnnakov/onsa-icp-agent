@@ -1,0 +1,73 @@
+{
+  "test_type": "quick_intent_test",
+  "timestamp": "2025-06-22T08:50:29.743196",
+  "total_tests": 8,
+  "successful_tests": 8,
+  "accuracy": 100.0,
+  "results": [
+    {
+      "message": "hi",
+      "expected": "casual_greeting",
+      "detected": "casual_greeting",
+      "confidence": 1.0,
+      "success": true,
+      "category": "greeting"
+    },
+    {
+      "message": "create an ICP",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 1.0,
+      "success": true,
+      "category": "icp_request"
+    },
+    {
+      "message": "find prospects",
+      "expected": "find_prospects",
+      "detected": "find_prospects",
+      "confidence": 0.9,
+      "success": true,
+      "category": "prospect_search"
+    },
+    {
+      "message": "my company is TechCorp",
+      "expected": "provide_business_info",
+      "detected": "provide_business_info",
+      "confidence": 0.9,
+      "success": true,
+      "category": "business_info"
+    },
+    {
+      "message": "creat an icp",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 1.0,
+      "success": true,
+      "category": "typo"
+    },
+    {
+      "message": "fnd prospects",
+      "expected": "find_prospects",
+      "detected": "find_prospects",
+      "confidence": 0.9,
+      "success": true,
+      "category": "typo"
+    },
+    {
+      "message": "Hi, I'm John from TechCorp, create an ICP",
+      "expected": "request_icp_creation",
+      "detected": "request_icp_creation",
+      "confidence": 1.0,
+      "success": true,
+      "category": "mixed"
+    },
+    {
+      "message": "thing",
+      "expected": "unclear",
+      "detected": "unclear",
+      "confidence": 0.9,
+      "success": true,
+      "category": "ambiguous"
+    }
+  ]
+}

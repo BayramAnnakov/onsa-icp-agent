@@ -39,6 +39,12 @@ def get_all_test_cases() -> List[Dict[str, Any]]:
     test_cases.extend(get_system_exploitation_test_cases())
     test_cases.extend(get_context_dependent_test_cases())
     test_cases.extend(get_confidence_edge_cases())
+    test_cases.extend(get_mobile_typing_test_cases())
+    test_cases.extend(get_voice_to_text_test_cases())
+    test_cases.extend(get_industry_specific_test_cases())
+    test_cases.extend(get_compound_typo_test_cases())
+    test_cases.extend(get_negation_confusion_test_cases())
+    test_cases.extend(get_implicit_intent_test_cases())
     
     return test_cases
 
@@ -528,4 +534,140 @@ def get_confidence_edge_cases() -> List[Dict[str, Any]]:
         # High confidence expected
         {"message": "I explicitly want to create an ideal customer profile", "expected": "request_icp_creation", "category": "confidence_very_high"},
         {"message": "Please find prospects that match my criteria", "expected": "find_prospects", "category": "confidence_very_high"},
+    ]
+
+
+def get_mobile_typing_test_cases() -> List[Dict[str, Any]]:
+    """Test cases for common mobile typing errors."""
+    return [
+        # Autocorrect failures
+        {"message": "create and ICP", "expected": "request_icp_creation", "category": "mobile_autocorrect", "notes": "and vs an"},
+        {"message": "fund prospects", "expected": "find_prospects", "category": "mobile_autocorrect", "notes": "fund vs find"},
+        {"message": "I need am ICP", "expected": "request_icp_creation", "category": "mobile_autocorrect", "notes": "am vs an"},
+        {"message": "shoe me prospects", "expected": "find_prospects", "category": "mobile_autocorrect", "notes": "shoe vs show"},
+        
+        # Fat finger errors
+        {"message": "cteate an ICP", "expected": "request_icp_creation", "category": "mobile_fat_finger"},
+        {"message": "fknd prospects", "expected": "find_prospects", "category": "mobile_fat_finger"},
+        {"message": "my conpany is", "expected": "provide_business_info", "category": "mobile_fat_finger"},
+        {"message": "hellp me", "expected": "ask_question", "category": "mobile_fat_finger"},
+        
+        # Missing spaces
+        {"message": "createanICP", "expected": "request_icp_creation", "category": "mobile_missing_spaces"},
+        {"message": "findprospects", "expected": "find_prospects", "category": "mobile_missing_spaces"},
+        {"message": "mycompanyis", "expected": "provide_business_info", "category": "mobile_missing_spaces"},
+        
+        # Double letters
+        {"message": "creeate an ICP", "expected": "request_icp_creation", "category": "mobile_double_letters"},
+        {"message": "finnd prospects", "expected": "find_prospects", "category": "mobile_double_letters"},
+        {"message": "heelp me", "expected": "ask_question", "category": "mobile_double_letters"},
+    ]
+
+
+def get_voice_to_text_test_cases() -> List[Dict[str, Any]]:
+    """Test cases for voice-to-text errors."""
+    return [
+        # Homophones
+        {"message": "create an I see pea", "expected": "request_icp_creation", "category": "voice_homophone"},
+        {"message": "find sum prospects", "expected": "find_prospects", "category": "voice_homophone"},
+        {"message": "my company cells software", "expected": "provide_business_info", "category": "voice_homophone"},
+        {"message": "I need too find customers", "expected": "find_prospects", "category": "voice_homophone"},
+        
+        # Phonetic spelling
+        {"message": "kree ate an ICP", "expected": "request_icp_creation", "category": "voice_phonetic"},
+        {"message": "fynd prospects", "expected": "find_prospects", "category": "voice_phonetic"},
+        {"message": "bild a profile", "expected": "request_icp_creation", "category": "voice_phonetic"},
+        
+        # Run-on sentences from speech
+        {"message": "yeah so basically I need you to create an ICP for my company which sells software to other businesses", "expected": "request_icp_creation", "category": "voice_run_on"},
+        {"message": "um can you like find me some prospects I guess for my business", "expected": "find_prospects", "category": "voice_filler_words"},
+        {"message": "so uh we're a B2B company and um we need an ICP", "expected": "provide_business_info", "category": "voice_filler_words"},
+    ]
+
+
+def get_industry_specific_test_cases() -> List[Dict[str, Any]]:
+    """Test cases with industry-specific terminology and abbreviations."""
+    return [
+        # Tech industry
+        {"message": "need ICP for b2b saas targeting smb with arr >1m", "expected": "request_icp_creation", "category": "industry_tech_abbrev"},
+        {"message": "find prospects: series A/B, 50+ eng, using k8s", "expected": "find_prospects", "category": "industry_tech_specific"},
+        {"message": "our PLG motion targets developers at scale-ups", "expected": "provide_business_info", "category": "industry_tech_jargon"},
+        
+        # Finance industry
+        {"message": "create ICP for fintechs with AUM > 100M", "expected": "request_icp_creation", "category": "industry_finance"},
+        {"message": "find RIAs and BDs in wealth management", "expected": "find_prospects", "category": "industry_finance_abbrev"},
+        {"message": "we provide RegTech solutions for KYC/AML", "expected": "provide_business_info", "category": "industry_finance_jargon"},
+        
+        # Healthcare
+        {"message": "need hospitals with 200+ beds using EHR/EMR", "expected": "find_prospects", "category": "industry_healthcare"},
+        {"message": "create ICP for HIPAA-compliant telehealth", "expected": "request_icp_creation", "category": "industry_healthcare_compliance"},
+        {"message": "our RCM solution helps with prior auth", "expected": "provide_business_info", "category": "industry_healthcare_abbrev"},
+        
+        # Generic business
+        {"message": "need F500 with strong ESG and DEI initiatives", "expected": "find_prospects", "category": "industry_generic_abbrev"},
+        {"message": "create ICP: CPG companies doing DTC", "expected": "request_icp_creation", "category": "industry_generic_sector"},
+    ]
+
+
+def get_compound_typo_test_cases() -> List[Dict[str, Any]]:
+    """Test cases with multiple typos in the same message."""
+    return [
+        # Multiple typos
+        {"message": "pls creat an IPC for my compny", "expected": "request_icp_creation", "category": "compound_multiple_typos"},
+        {"message": "i nees to fnd prospcts quikly", "expected": "find_prospects", "category": "compound_many_typos"},
+        {"message": "hlp me mak custmer profle", "expected": "request_icp_creation", "category": "compound_severe_typos"},
+        
+        # Typos + grammar errors
+        {"message": "can u creating icp 4 me company", "expected": "request_icp_creation", "category": "compound_typo_grammar"},
+        {"message": "i wanting find prospect for sell", "expected": "find_prospects", "category": "compound_typo_grammar"},
+        
+        # Typos + wrong words
+        {"message": "create and IPC profile for me", "expected": "request_icp_creation", "category": "compound_typo_wrong_word"},
+        {"message": "fund me sum good prospekts", "expected": "find_prospects", "category": "compound_typo_wrong_word"},
+    ]
+
+
+def get_negation_confusion_test_cases() -> List[Dict[str, Any]]:
+    """Test cases with confusing negations."""
+    return [
+        # Double negatives
+        {"message": "I don't not want an ICP", "expected": "request_icp_creation", "category": "negation_double"},
+        {"message": "not uninterested in finding prospects", "expected": "find_prospects", "category": "negation_double"},
+        
+        # Contradictory negations
+        {"message": "don't create an ICP, actually yes do it", "expected": "request_icp_creation", "category": "negation_contradiction"},
+        {"message": "no prospects... wait, yes find them", "expected": "find_prospects", "category": "negation_contradiction"},
+        
+        # Implicit negation
+        {"message": "I doubt this will work but create an ICP", "expected": "request_icp_creation", "category": "negation_implicit"},
+        {"message": "probably won't help but find prospects anyway", "expected": "find_prospects", "category": "negation_implicit"},
+        
+        # Negation with positive intent
+        {"message": "don't stop until you find good prospects", "expected": "find_prospects", "category": "negation_positive_intent"},
+        {"message": "I can't wait for you to create the ICP", "expected": "request_icp_creation", "category": "negation_positive_intent"},
+    ]
+
+
+def get_implicit_intent_test_cases() -> List[Dict[str, Any]]:
+    """Test cases where intent is implied rather than stated."""
+    return [
+        # Implicit ICP creation
+        {"message": "I need to know who my ideal customers are", "expected": "request_icp_creation", "category": "implicit_icp"},
+        {"message": "help me figure out who to target", "expected": "request_icp_creation", "category": "implicit_icp"},
+        {"message": "what kind of companies should I sell to?", "expected": "request_icp_creation", "category": "implicit_icp_question"},
+        
+        # Implicit prospect search
+        {"message": "I need customers", "expected": "find_prospects", "category": "implicit_prospects"},
+        {"message": "who should I reach out to?", "expected": "find_prospects", "category": "implicit_prospects_question"},
+        {"message": "get me some companies to contact", "expected": "find_prospects", "category": "implicit_prospects"},
+        
+        # Implicit business info
+        {"message": "let me tell you what we do", "expected": "provide_business_info", "category": "implicit_business"},
+        {"message": "so here's the thing about our company", "expected": "provide_business_info", "category": "implicit_business"},
+        {"message": "we're in the business of", "expected": "provide_business_info", "category": "implicit_business"},
+        
+        # Implicit feedback
+        {"message": "that's not quite right", "expected": "provide_feedback", "category": "implicit_feedback"},
+        {"message": "close but not exactly", "expected": "provide_feedback", "category": "implicit_feedback"},
+        {"message": "you're on the right track", "expected": "provide_feedback", "category": "implicit_feedback"},
     ]
