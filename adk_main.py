@@ -2200,6 +2200,18 @@ What specifically would you like to know more about?
             # Go back one step if possible
             return "Sure! What would you like to revisit or change?"
         
+        elif nav_intent["action"] == "continue" or nav_intent["action"] == "proceed":
+            # Handle "please proceed" properly based on current step
+            if conversation.current_step == WorkflowStep.ICP_REFINEMENT:
+                # Treat as approval and move to prospect search
+                return await self._handle_icp_refinement(conversation, "looks good", [])
+            elif conversation.current_step == WorkflowStep.PROSPECT_REVIEW:
+                # Treat as approval of prospects
+                return await self._handle_prospect_review(conversation, "approve", [])
+            else:
+                # Generic proceed based on current step
+                return nav_intent.get("response", "Let me continue with the next step...")
+        
         else:
             return nav_intent.get("response", "I can help you navigate the process. Would you like to start over, skip ahead, or go back to something?")
     
