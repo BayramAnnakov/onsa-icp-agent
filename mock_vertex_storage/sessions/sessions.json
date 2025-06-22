@@ -1,0 +1,146 @@
+{
+  "icp_agent_system:test_session_123": {
+    "app_name": "icp_agent_system",
+    "user_id": "default",
+    "session_id": "test_session_123",
+    "state": {},
+    "created_at": "2025-06-21T21:21:14.628920",
+    "updated_at": "2025-06-21T21:21:14.628925"
+  },
+  "test_app:test_session_123": {
+    "app_name": "test_app",
+    "user_id": "test_user",
+    "session_id": "test_session_123",
+    "state": {},
+    "created_at": "2025-06-21T21:59:41.568908",
+    "updated_at": "2025-06-21T21:59:41.568913"
+  },
+  "icp_agent_system:json_gen_1750568525": {
+    "app_name": "icp_agent_system",
+    "user_id": "system",
+    "session_id": "json_gen_1750568525",
+    "state": {},
+    "created_at": "2025-06-21T22:02:05.250484",
+    "updated_at": "2025-06-21T22:02:05.250489"
+  },
+  "icp_agent_system:json_gen_1750568577": {
+    "app_name": "icp_agent_system",
+    "user_id": "system",
+    "session_id": "json_gen_1750568577",
+    "state": {},
+    "created_at": "2025-06-21T22:02:57.882190",
+    "updated_at": "2025-06-21T22:02:57.882406"
+  },
+  "icp_agent_system:json_gen_1750568617": {
+    "app_name": "icp_agent_system",
+    "user_id": "system",
+    "session_id": "json_gen_1750568617",
+    "state": {},
+    "created_at": "2025-06-21T22:03:37.762006",
+    "updated_at": "2025-06-21T22:03:37.762027"
+  },
+  "icp_agent_system:json_gen_1750568620": {
+    "app_name": "icp_agent_system",
+    "user_id": "system",
+    "session_id": "json_gen_1750568620",
+    "state": {},
+    "created_at": "2025-06-21T22:03:40.952589",
+    "updated_at": "2025-06-21T22:03:40.952598"
+  },
+  "icp_agent_system:json_gen_1750568626": {
+    "app_name": "icp_agent_system",
+    "user_id": "system",
+    "session_id": "json_gen_1750568626",
+    "state": {},
+    "created_at": "2025-06-21T22:03:46.542057",
+    "updated_at": "2025-06-21T22:03:46.542061"
+  },
+  "icp_agent_system:json_gen_1750568630": {
+    "app_name": "icp_agent_system",
+    "user_id": "system",
+    "session_id": "json_gen_1750568630",
+    "state": {},
+    "created_at": "2025-06-21T22:03:50.409834",
+    "updated_at": "2025-06-21T22:03:50.409840"
+  },
+  "icp_agent_system:json_gen_1750568681": {
+    "app_name": "icp_agent_system",
+    "user_id": "system",
+    "session_id": "json_gen_1750568681",
+    "state": {},
+    "created_at": "2025-06-21T22:04:41.948547",
+    "updated_at": "2025-06-21T22:04:41.948552"
+  },
+  "icp_agent_system:json_gen_1750568782": {
+    "app_name": "icp_agent_system",
+    "user_id": "system",
+    "session_id": "json_gen_1750568782",
+    "state": {},
+    "created_at": "2025-06-21T22:06:22.028445",
+    "updated_at": "2025-06-21T22:06:22.028452"
+  },
+  "icp_agent_system:json_gen_1750569726": {
+    "app_name": "icp_agent_system",
+    "user_id": "system",
+    "session_id": "json_gen_1750569726",
+    "state": {},
+    "created_at": "2025-06-21T22:22:06.592313",
+    "updated_at": "2025-06-21T22:22:06.592316"
+  },
+  "icp_agent_system:json_gen_1750569729": {
+    "app_name": "icp_agent_system",
+    "user_id": "system",
+    "session_id": "json_gen_1750569729",
+    "state": {},
+    "created_at": "2025-06-21T22:22:09.283658",
+    "updated_at": "2025-06-21T22:22:09.283669"
+  },
+  "icp_agent_system:json_gen_1750569735": {
+    "app_name": "icp_agent_system",
+    "user_id": "system",
+    "session_id": "json_gen_1750569735",
+    "state": {},
+    "created_at": "2025-06-21T22:22:15.944553",
+    "updated_at": "2025-06-21T22:22:15.944557"
+  },
+  "icp_agent_system:json_gen_1750569739": {
+    "app_name": "icp_agent_system",
+    "user_id": "system",
+    "session_id": "json_gen_1750569739",
+    "state": {},
+    "created_at": "2025-06-21T22:22:19.891024",
+    "updated_at": "2025-06-21T22:22:19.891028"
+  },
+  "icp_agent_system:json_gen_1750569793": {
+    "app_name": "icp_agent_system",
+    "user_id": "system",
+    "session_id": "json_gen_1750569793",
+    "state": {},
+    "created_at": "2025-06-21T22:23:13.362818",
+    "updated_at": "2025-06-21T22:23:13.362822"
+  },
+  "icp_agent_system:json_gen_1750569848": {
+    "app_name": "icp_agent_system",
+    "user_id": "system",
+    "session_id": "json_gen_1750569848",
+    "state": {},
+    "created_at": "2025-06-21T22:24:08.291677",
+    "updated_at": "2025-06-21T22:24:08.291680"
+  },
+  "icp_agent_system:json_gen_1750574075": {
+    "app_name": "icp_agent_system",
+    "user_id": "system",
+    "session_id": "json_gen_1750574075",
+    "state": {},
+    "created_at": "2025-06-21T23:34:35.796840",
+    "updated_at": "2025-06-21T23:34:35.796844"
+  },
+  "icp_agent_system:json_gen_1750574078": {
+    "app_name": "icp_agent_system",
+    "user_id": "system",
+    "session_id": "json_gen_1750574078",
+    "state": {},
+    "created_at": "2025-06-21T23:34:38.056434",
+    "updated_at": "2025-06-21T23:34:38.056450"
+  }
+}

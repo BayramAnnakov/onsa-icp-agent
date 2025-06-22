@@ -18,7 +18,7 @@ A sophisticated multi-agent system built with Google ADK (Agent Development Kit)
 1. **ICP Agent** (`adk_icp_agent.py`)
    - Creates comprehensive ICPs from company research
    - Uses web scraping and company data analysis
-   - Generates HDW/Exa compatible search criteria
+   - Generates HDW-compatible search criteria
 
 2. **Prospect Agent** (`adk_prospect_agent.py`)
    - Searches for prospects matching ICP criteria
@@ -99,7 +99,30 @@ scoring:
 
 ## 🚦 Usage
 
-### Running the Full Pipeline
+### Web Interface (Recommended)
+
+The system includes a Gradio-based web interface for easy interaction:
+
+```bash
+# Run the web interface
+python web_interface.py
+# or
+python main.py
+```
+
+The interface will be available at: `http://localhost:7860`
+
+#### Web Interface Features:
+- **Interactive Chat**: Natural conversation with agents
+- **Agent Selection**: Choose between Main Workflow or individual agents
+- **File Attachments**: Add URLs for company analysis
+- **Session Management**: Save and load conversations
+- **Export Results**: Download in Markdown or JSON format
+- **Real-time Progress**: See what agents are doing with streaming responses
+
+### Command Line Usage
+
+For programmatic access or testing:
 
 ```bash
 python test_full_pipeline_fixed.py
@@ -203,6 +226,24 @@ onsa-icp-agent/
 ├── requirements.txt        # Python dependencies
 └── config.yaml             # Configuration file
 ```
+
+## 🚀 Deployment
+
+### Google Cloud Run
+
+The system is ready for deployment on Google Cloud Run:
+
+```bash
+# Build and deploy
+gcloud run deploy adk-sales-system \
+  --source . \
+  --platform managed \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --set-env-vars "GOOGLE_API_KEY=$GOOGLE_API_KEY,HDW_API_TOKEN=$HDW_API_TOKEN,EXA_API_KEY=$EXA_API_KEY,FIRECRAWL_API_KEY=$FIRECRAWL_API_KEY"
+```
+
+See `DEPLOYMENT.md` for detailed deployment instructions.
 
 ## 🔒 Security Notes
 

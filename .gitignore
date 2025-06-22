@@ -65,6 +65,7 @@ env/
 
 # Environment variables
 .env
+.env_backup
 .env.local
 .env.development
 .env.test

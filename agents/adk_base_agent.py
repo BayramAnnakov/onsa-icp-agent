@@ -10,7 +10,7 @@ from datetime import datetime
 # Google ADK imports
 from google.adk.agents import Agent
 from google.adk.runners import Runner
-from google.adk.tools import FunctionTool
+from google.adk.tools import FunctionTool, load_memory
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
@@ -21,6 +21,11 @@ from contextlib import asynccontextmanager
 from models import Conversation, ConversationMessage, MessageRole
 from utils.config import Config
 from utils.cache import CacheManager
+from utils.logging_config import get_logger
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from services.vertex_memory_service import VertexMemoryManager
 
 
 class AgentMessage(BaseModel):
@@ -61,7 +66,8 @@ class ADKAgent(ABC):
         agent_description: str,
         config: Config,
         cache_manager: Optional[CacheManager] = None,
-        tools: Optional[List[Any]] = None
+        tools: Optional[List[Any]] = None,
+        memory_manager: Optional['VertexMemoryManager'] = None
     ):
         # Store configuration
         self.agent_name = agent_name
@@ -69,9 +75,10 @@ class ADKAgent(ABC):
         self.agent_id = str(uuid.uuid4())
         self.config = config
         self.cache_manager = cache_manager or CacheManager(config.cache)
+        self.memory_manager = memory_manager
         
         # Set up logging
-        self.logger = structlog.get_logger().bind(agent=agent_name)
+        self.logger = get_logger(f"agents.{agent_name}")
         
         # Agent state
         self.active_conversations = {}
@@ -83,13 +90,71 @@ class ADKAgent(ABC):
         self.tools = tools or []
         
         # Session service for Google ADK
-        self.session_service = InMemorySessionService()
+        # Will be set based on memory_manager availability
+        self.session_service = None
+        self.memory_service = None
+        self._init_session_services()
         
         # Initialize the Google ADK Agent
         self.adk_agent = None
         self.runner = None
         
-        self.logger.info("ADK Agent initialized", model=config.gemini.model)
+        # Memory-aware instruction
+        self.memory_aware_instruction = self._create_memory_aware_instruction()
+        
+        self.logger.info(f"ADK Agent initialized - Model: {config.gemini.model}, Memory enabled: {bool(memory_manager)}")
+    
+    def _get_app_name(self) -> str:
+        """Get the appropriate app name for VertexAI services.
+        
+        Returns reasoning engine app name if available, otherwise default.
+        """
+        if self.memory_manager and hasattr(self.memory_manager.config, 'reasoning_engine_app_name'):
+            return self.memory_manager.config.reasoning_engine_app_name or "icp_agent_system"
+        return "icp_agent_system"
+    
+    def _init_session_services(self):
+        """Initialize session and memory services based on configuration."""
+        if self.memory_manager:
+            # Services will be initialized lazily by memory manager
+            self.session_service = None  # Will be set from memory manager
+            self.memory_service = None   # Will be set from memory manager
+            self.logger.info("Using VertexAI services (lazy initialization)")
+        else:
+            # Fallback to in-memory services
+            from google.adk.memory import InMemoryMemoryService
+            self.session_service = InMemorySessionService()
+            self.memory_service = InMemoryMemoryService()
+            self.logger.info("Using in-memory services")
+    
+    def _create_memory_aware_instruction(self) -> str:
+        """Create memory-aware agent instruction."""
+        base_instruction = self.agent_description
+        
+        if self.memory_manager:
+            memory_context = f"""
+{base_instruction}
+
+You have access to persistent memory through the load_memory tool. 
+
+IMPORTANT: When users ask about:
+- Previous ICPs, prospects, or companies analyzed
+- Past conversations or sessions
+- "What we did before" or "last time"
+- Any reference to previous interactions
+
+You MUST use the load_memory tool to search for relevant past conversations.
+
+The load_memory tool allows you to:
+- Search for specific topics from past conversations
+- Retrieve ICPs, prospects, and analysis from previous sessions
+- Continue where you left off
+- Provide context-aware responses based on history
+
+Always check memory first when the user references past work or asks about previous sessions."""
+            return memory_context
+        else:
+            return base_instruction
     
     def add_external_tool(
         self,
@@ -121,7 +186,22 @@ class ADKAgent(ABC):
         if hasattr(self, '_adk_agent_initialized'):
             self._adk_agent_initialized = False
         
-        self.logger.info("Added external tool", tool_name=name)
+        self.logger.info(f"Added external tool: {name}")
+    
+    async def _ensure_runner_initialized(self):
+        """Ensure the runner is initialized with the appropriate session and memory services."""
+        if self.memory_manager and getattr(self, '_runner_needs_init', False):
+            # Get both session and memory services from memory manager
+            session_service = await self.memory_manager.session_service
+            memory_service = await self.memory_manager.memory_service
+            self.runner = Runner(
+                agent=self.adk_agent,
+                app_name=self._get_app_name(),
+                session_service=session_service,
+                memory_service=memory_service
+            )
+            self._runner_needs_init = False
+            self.logger.info("Runner initialized with VertexAI session and memory services")
     
     async def process_message(
         self,
@@ -136,6 +216,9 @@ class ADKAgent(ABC):
             self._create_adk_agent()
             self._adk_agent_initialized = True
         
+        # Ensure runner is initialized
+        await self._ensure_runner_initialized()
+        
         # Get or create conversation
         if conversation_id:
             conversation = self.get_conversation(conversation_id)
@@ -146,7 +229,7 @@ class ADKAgent(ABC):
                 )
                 self.active_conversations[conversation_id] = conversation
         else:
-            conversation_id = f"conv_{int(datetime.now().timestamp())}"
+            conversation_id = f"conv_{uuid.uuid4().hex[:12]}"
             conversation = Conversation(
                 id=conversation_id,
                 user_id="default"
@@ -158,11 +241,32 @@ class ADKAgent(ABC):
         
         # Create or get session
         user_id = conversation.user_id
-        session = await self.session_service.create_session(
-            app_name="icp_agent_system",
-            user_id=user_id,
-            session_id=conversation_id
-        )
+        
+        # Get appropriate session service
+        if self.memory_manager:
+            session_service = await self.memory_manager.session_service
+        else:
+            session_service = self.session_service
+            
+        # Determine app name based on service type
+        if hasattr(session_service, '__class__') and 'VertexAi' in session_service.__class__.__name__:
+            # For VertexAI, use reasoning engine app name if available
+            app_name = self._get_app_name()
+                
+            # Let VertexAI auto-generate the session ID
+            session = await session_service.create_session(
+                app_name=app_name,
+                user_id=user_id
+            )
+            # Store mapping of conversation_id to session_id for later reference
+            conversation.metadata["vertex_session_id"] = session.id
+        else:
+            # For other services, we can provide our own session_id
+            session = await session_service.create_session(
+                app_name=self._get_app_name(),
+                user_id=user_id,
+                session_id=conversation_id
+            )
         
         try:
             # Create content for Google ADK
@@ -191,11 +295,120 @@ class ADKAgent(ABC):
                 agent_name=self.agent_name
             )
             
+            # Add session to memory after successful processing
+            await self._add_session_to_memory(session.id, user_id)
+            
             return response_text
             
         except Exception as e:
-            self.logger.error("Error processing message", error=str(e))
+            self.logger.error(f"Error processing message - Error: {str(e)}")
             raise
+    
+    async def process_message_stream(
+        self,
+        message: str,
+        conversation_id: Optional[str] = None,
+        context: Optional[Dict[str, Any]] = None
+    ):
+        """Process a message using Google ADK with streaming responses.
+        
+        Yields streaming response parts from the agent including progress updates.
+        """
+        
+        # Ensure ADK agent is created or recreated if tools changed
+        if not self.adk_agent or not getattr(self, '_adk_agent_initialized', False):
+            self._create_adk_agent()
+            self._adk_agent_initialized = True
+        
+        # Ensure runner is initialized
+        await self._ensure_runner_initialized()
+        
+        # Get or create conversation
+        if conversation_id:
+            conversation = self.get_conversation(conversation_id)
+            if not conversation:
+                conversation = Conversation(
+                    id=conversation_id,
+                    user_id="default"
+                )
+                self.active_conversations[conversation_id] = conversation
+        else:
+            conversation_id = f"conv_{uuid.uuid4().hex[:12]}"
+            conversation = Conversation(
+                id=conversation_id,
+                user_id="default"
+            )
+            self.active_conversations[conversation_id] = conversation
+        
+        # Add user message to conversation
+        conversation.add_message(MessageRole.USER, message)
+        
+        # Create or get session
+        user_id = conversation.user_id
+        
+        # Get appropriate session service
+        if self.memory_manager:
+            session_service = await self.memory_manager.session_service
+        else:
+            session_service = self.session_service
+            
+        # Determine app name based on service type
+        if hasattr(session_service, '__class__') and 'VertexAi' in session_service.__class__.__name__:
+            # For VertexAI, use reasoning engine app name if available
+            app_name = self._get_app_name()
+                
+            # Let VertexAI auto-generate the session ID
+            session = await session_service.create_session(
+                app_name=app_name,
+                user_id=user_id
+            )
+            # Store mapping of conversation_id to session_id for later reference
+            conversation.metadata["vertex_session_id"] = session.id
+        else:
+            # For other services, we can provide our own session_id
+            session = await session_service.create_session(
+                app_name=self._get_app_name(),
+                user_id=user_id,
+                session_id=conversation_id
+            )
+        
+        try:
+            # Create content for Google ADK
+            content = types.Content(
+                role='user',
+                parts=[types.Part(text=message)]
+            )
+            
+            # Yield initial thinking message
+            yield f"🤖 {self.agent_name} is processing your request...\n\n"
+            
+            # Run the agent with streaming
+            full_response = ""
+            events_async = self.runner.run_async(
+                session_id=session.id,
+                user_id=user_id,
+                new_message=content
+            )
+            
+            async for event in events_async:
+                if event.content and event.content.parts:
+                    if text := ''.join(part.text or '' for part in event.content.parts):
+                        full_response += text
+                        yield text
+            
+            # Add complete response to conversation history
+            conversation.add_message(
+                MessageRole.ASSISTANT,
+                full_response,
+                agent_name=self.agent_name
+            )
+            
+            # Add session to memory after successful processing
+            await self._add_session_to_memory(session.id, user_id)
+            
+        except Exception as e:
+            self.logger.error(f"Error processing message stream - Error: {str(e)}")
+            yield f"\n\n❌ Error: {str(e)}"
     
     def _format_conversation_history(self, conversation: Conversation) -> str:
         """Format conversation history for the model."""
@@ -205,6 +418,171 @@ class ADKAgent(ABC):
             history_lines.append(f"{role}: {msg.content}")
         
         return "\n".join(history_lines) if history_lines else ""
+    
+    async def process_message_with_memory(
+        self,
+        message: str,
+        conversation_id: Optional[str] = None,
+        context: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """Process a message with memory context enhancement.
+        
+        This method:
+        1. Retrieves relevant memories from previous conversations
+        2. Enhances the message with memory context
+        3. Processes the enhanced message
+        4. Ingests the interaction into memory
+        
+        Args:
+            message: User message
+            conversation_id: Conversation identifier
+            context: Optional context dictionary
+            
+        Returns:
+            Agent response
+        """
+        if not self.memory_manager:
+            # Fallback to regular processing if no memory manager
+            return await self.process_message(message, conversation_id, context)
+        
+        # Extract user_id from context or use default
+        user_id = context.get("user_id", "default") if context else "default"
+        
+        try:
+            # Query relevant memories
+            memories = await self.memory_manager.query_memory(
+                app_name=self._get_app_name(),
+                user_id=user_id,
+                query=message,
+                top_k=self.config.vertexai.similarity_top_k if hasattr(self.config, 'vertexai') else 5
+            )
+            
+            # Format memories for context
+            memory_context = self.memory_manager.format_memories_for_context(memories)
+            
+            # Enhance message with memory context
+            enhanced_message = message
+            if memories:
+                enhanced_message = f"{memory_context}\n\nCurrent query: {message}"
+                self.logger.info(f"Enhanced message with memory context - Memory_Count: {len(memories)}")
+            
+            # Process the enhanced message
+            response = await self.process_message(
+                enhanced_message,
+                conversation_id,
+                context
+            )
+            
+            # Ingest the interaction into memory
+            await self.memory_manager.ingest_memory(
+                app_name=self._get_app_name(),
+                user_id=user_id,
+                session_id=conversation_id or f"session_{int(datetime.now().timestamp())}",
+                messages=[
+                    {"role": "user", "content": message},
+                    {"role": "assistant", "content": response}
+                ],
+                metadata={
+                    "agent": self.agent_name,
+                    "timestamp": datetime.now().isoformat()
+                }
+            )
+            
+            return response
+            
+        except Exception as e:
+            self.logger.error(f"Error in memory-enhanced processing - Error: {str(e)}")
+            # Fallback to regular processing
+            return await self.process_message(message, conversation_id, context)
+    
+    async def _add_session_to_memory(self, session_id: str, user_id: str) -> None:
+        """Add a completed session to memory service.
+        
+        This is called after processing messages to persist the session.
+        
+        Args:
+            session_id: The session ID to persist
+            user_id: The user ID associated with the session
+        """
+        try:
+            # Get appropriate services
+            if self.memory_manager:
+                session_service = await self.memory_manager.session_service
+                memory_service = await self.memory_manager.memory_service
+            else:
+                session_service = self.session_service
+                memory_service = self.memory_service
+                
+            if not memory_service:
+                return
+                
+            # Get the session
+            session = await session_service.get_session(
+                app_name=self._get_app_name(),
+                user_id=user_id,
+                session_id=session_id
+            )
+            
+            if session and hasattr(memory_service, 'add_session_to_memory'):
+                # Add the session to memory
+                await memory_service.add_session_to_memory(session)
+                self.logger.debug(f"Session added to memory - Session_Id: {session_id}")
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to add session to memory: {e}")
+    
+    async def load_memory(
+        self,
+        query: str,
+        user_id: Optional[str] = None,
+        top_k: int = 5
+    ) -> Dict[str, Any]:
+        """Load relevant memories from previous conversations.
+        
+        This tool allows agents to query past conversations and retrieve relevant context.
+        
+        Args:
+            query: Search query to find relevant memories
+            user_id: Optional user ID to filter memories (defaults to current user)
+            top_k: Number of memories to retrieve
+            
+        Returns:
+            Dictionary with status and retrieved memories
+        """
+        try:
+            # Use memory manager if available
+            if self.memory_manager:
+                user_id = user_id or "default"
+                memories = await self.memory_manager.query_memory(
+                    app_name=self._get_app_name(),
+                    user_id=user_id,
+                    query=query,
+                    top_k=top_k
+                )
+                
+                # Format memories for response
+                memory_context = self.memory_manager.format_memories_for_context(memories)
+                
+                return {
+                    "status": "success",
+                    "memories_found": len(memories),
+                    "context": memory_context
+                }
+            else:
+                return {
+                    "status": "no_memory_service",
+                    "memories_found": 0,
+                    "context": "Memory service is not available."
+                }
+                
+        except Exception as e:
+            self.logger.error(f"Error loading memory - Error: {str(e)}")
+            return {
+                "status": "error",
+                "error_message": str(e),
+                "memories_found": 0,
+                "context": "Failed to retrieve memories."
+            }
     
     async def search_companies_hdw(
         self,
@@ -245,11 +623,11 @@ class ADKAgent(ABC):
             # Cache the result
             self.cache_manager.set(cache_key, companies)
             
-            self.logger.info("Companies found via HDW", count=len(companies))
+            self.logger.info(f"Companies found via HDW - Count: {len(companies)}")
             return {"status": "success", "companies": companies}
             
         except Exception as e:
-            self.logger.error("Error searching companies with HDW", error=str(e))
+            self.logger.error(f"Error searching companies with HDW - Error: {str(e)}")
             return {"status": "error", "error_message": str(e)}
     
     async def search_people_hdw(
@@ -322,11 +700,11 @@ class ADKAgent(ABC):
             # Cache the result
             self.cache_manager.set(cache_key, people)
             
-            self.logger.info("People found via HDW", count=len(people))
+            self.logger.info(f"People found via HDW - Count: {len(people)}")
             return {"status": "success", "people": people}
             
         except Exception as e:
-            self.logger.error("Error searching people with HDW", error=str(e))
+            self.logger.error(f"Error searching people with HDW - Error: {str(e)}")
             return {"status": "error", "error_message": str(e)}
     
     async def search_people_exa(
@@ -364,17 +742,17 @@ class ADKAgent(ABC):
                 )
             except ValueError as e:
                 # Exa API key not configured
-                self.logger.warning("Exa API not configured", error=str(e))
+                self.logger.warning(f"Exa API not configured - Error: {str(e)}")
                 return {"status": "error", "error_message": "Exa API key not configured"}
             
             # Cache the result
             self.cache_manager.set(cache_key, people)
             
-            self.logger.info("People found via Exa", count=len(people))
+            self.logger.info(f"People found via Exa - Count: {len(people)}")
             return {"status": "success", "people": people}
             
         except Exception as e:
-            self.logger.error("Error searching people with Exa", error=str(e))
+            self.logger.error(f"Error searching people with Exa - Error: {str(e)}")
             return {"status": "error", "error_message": str(e)}
     
     async def scrape_website_firecrawl(
@@ -421,11 +799,11 @@ class ADKAgent(ABC):
             # Cache the content string
             self.cache_manager.set(cache_key, content)
             
-            self.logger.info("Website scraped via Firecrawl", url=url)
+            self.logger.info(f"Website scraped via Firecrawl - Url: {url}")
             return {"status": "success", "content": content, "metadata": metadata}
             
         except Exception as e:
-            self.logger.error("Error scraping website with Firecrawl", error=str(e))
+            self.logger.error(f"Error scraping website with Firecrawl - Error: {str(e)}")
             return {"status": "error", "error_message": str(e)}
     
     async def search_industries_hdw(
@@ -467,7 +845,7 @@ class ADKAgent(ABC):
             return {"status": "success", "industries": results}
             
         except Exception as e:
-            self.logger.error("Error searching industries with HDW", error=str(e))
+            self.logger.error(f"Error searching industries with HDW - Error: {str(e)}")
             return {"status": "error", "error_message": str(e)}
     
     async def search_people_nav_hdw(
@@ -554,7 +932,7 @@ class ADKAgent(ABC):
             return {"status": "success", "people": people}
             
         except Exception as e:
-            self.logger.error("Error with HDW nav search", error=str(e))
+            self.logger.error(f"Error with HDW nav search - Error: {str(e)}")
             return {"status": "error", "error_message": str(e)}
     
     async def search_locations_hdw(
@@ -596,14 +974,23 @@ class ADKAgent(ABC):
             return {"status": "success", "locations": results}
             
         except Exception as e:
-            self.logger.error("Error searching locations with HDW", error=str(e))
+            self.logger.error(f"Error searching locations with HDW - Error: {str(e)}")
             return {"status": "error", "error_message": str(e)}
     
     def setup_external_tools(self) -> None:
         """Setup external API tools. Override in subclasses to add specific tools."""
-        # Base implementation does not add any tools
+        # Base implementation sets up memory tools if available
+        if self.memory_manager or self.memory_service:
+            self.setup_memory_tools()
         # Subclasses should call specific tool setup methods as needed
         pass
+    
+    def setup_memory_tools(self) -> None:
+        """Setup memory tools for accessing past conversations."""
+        # Use ADK's built-in load_memory tool directly
+        if self.memory_manager or self.memory_service:
+            self.tools.append(load_memory)
+            self.logger.info("Added ADK load_memory tool for past conversation access")
     
     def setup_company_search_tools(self) -> None:
         """Setup company search tools (HorizonDataWave)."""
@@ -671,30 +1058,44 @@ class ADKAgent(ABC):
             self.adk_agent = Agent(
                 model=self.config.gemini.model,
                 name=self.agent_name,
-                instruction=self.agent_description,
+                instruction=self.memory_aware_instruction,
                 tools=tool_functions
             )
-            self.runner = Runner(
-                agent=self.adk_agent,
-                app_name="icp_agent_system",
-                session_service=self.session_service
-            )
+            # Get session service for runner
+            if self.memory_manager:
+                # For async session service, we'll create runner after initialization
+                self.runner = None
+                self._runner_needs_init = True
+            else:
+                self.runner = Runner(
+                    agent=self.adk_agent,
+                    app_name=self._get_app_name(),
+                    session_service=self.session_service,
+                    memory_service=self.memory_service
+                )
             self._last_tool_count = len(tool_functions)
-            self.logger.info("Google ADK agent created successfully", tool_count=len(tool_functions))
+            self.logger.info(f"Google ADK agent created successfully - Tool_Count: {len(tool_functions)}")
         except Exception as e:
-            self.logger.error("Error creating Google ADK agent", error=str(e))
+            self.logger.error(f"Error creating Google ADK agent - Error: {str(e)}")
             # Fallback: create agent without tools
             self.adk_agent = Agent(
                 model=self.config.gemini.model,
                 name=self.agent_name,
-                instruction=self.agent_description,
+                instruction=self.memory_aware_instruction,
                 tools=[]
             )
-            self.runner = Runner(
-                agent=self.adk_agent,
-                app_name="icp_agent_system",
-                session_service=self.session_service
-            )
+            # Get session service for runner
+            if self.memory_manager:
+                # For async session service, we'll create runner after initialization
+                self.runner = None
+                self._runner_needs_init = True
+            else:
+                self.runner = Runner(
+                    agent=self.adk_agent,
+                    app_name=self._get_app_name(),
+                    session_service=self.session_service,
+                    memory_service=self.memory_service
+                )
             self._last_tool_count = 0
     
     @asynccontextmanager
@@ -750,19 +1151,40 @@ class ADKAgent(ABC):
             instruction=self.agent_description,
             tools=[]  # No tools to prevent function calling
         )
+        # Get session and memory services
+        if self.memory_manager:
+            session_service = await self.memory_manager.session_service
+            memory_service = await self.memory_manager.memory_service
+        else:
+            session_service = self.session_service
+            memory_service = self.memory_service
+        
         json_runner = Runner(
             agent=json_agent,
-            app_name="icp_agent_system",
-            session_service=self.session_service
+            app_name=self._get_app_name(),
+            session_service=session_service,
+            memory_service=memory_service
         )
         
         # Process message with the tool-less agent
-        session_id = f"json_gen_{int(datetime.now().timestamp())}"
-        session = await self.session_service.create_session(
-            app_name="icp_agent_system",
-            user_id="system",
-            session_id=session_id
-        )
+        session_id = f"json_gen_{uuid.uuid4().hex[:12]}"
+        
+        # Check if this is VertexAI session service
+        if hasattr(session_service, '__class__') and 'VertexAi' in session_service.__class__.__name__:
+            # For VertexAI, use reasoning engine app name if available
+            app_name = self._get_app_name()
+                
+            # Let VertexAI auto-generate the session ID
+            session = await session_service.create_session(
+                app_name=app_name,
+                user_id="system"
+            )
+        else:
+            session = await session_service.create_session(
+                app_name=self._get_app_name(),
+                user_id="system",
+                session_id=session_id
+            )
         
         content = types.Content(
             role='user',

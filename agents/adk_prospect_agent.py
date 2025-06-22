@@ -25,12 +25,13 @@ class ADKProspectAgent(ADKAgent):
     - Website analysis via Firecrawl
     """
     
-    def __init__(self, config: Config, cache_manager: Optional[CacheManager] = None):
+    def __init__(self, config: Config, cache_manager: Optional[CacheManager] = None, memory_manager=None):
         super().__init__(
             agent_name="prospect_agent",
             agent_description="Searches, scores, and ranks potential leads based on ICP criteria using multi-source data",
             config=config,
-            cache_manager=cache_manager
+            cache_manager=cache_manager,
+            memory_manager=memory_manager
         )
         
         # Prospect management
@@ -44,6 +45,7 @@ class ADKProspectAgent(ADKAgent):
         self._setup_external_clients()
         
         # Setup tools - only add what Prospect agent needs
+        self.setup_external_tools()  # This sets up memory tools from parent
         self.setup_prospect_specific_tools()
         self.setup_prospect_tools()
         
@@ -77,7 +79,7 @@ class ADKProspectAgent(ADKAgent):
         # Prospect agent occasionally uses web scraping for enrichment
         self.setup_web_scraping_tools()
         
-        self.logger.info("Prospect-specific external tools configured", tool_count=len(self.tools))
+        self.logger.info(f"Prospect-specific external tools configured - Tool_Count: {len(self.tools)}")
     
     def setup_prospect_tools(self) -> None:
         """Setup prospect-specific tools."""
@@ -161,7 +163,7 @@ class ADKProspectAgent(ADKAgent):
             if sources is None:
                 sources = ["hdw", "exa"]
             
-            self.logger.info("Starting multi-source prospect search", limit=search_limit, sources=sources)
+            self.logger.info(f"Starting multi-source prospect search - Limit: {search_limit}, Sources: {sources}")
             
             # Extract key criteria from ICP
             industries = icp_criteria.get("industries", [])
@@ -296,10 +298,16 @@ class ADKProspectAgent(ADKAgent):
                                 prospect_obj.score = ProspectScore(**score_data)
                             else:
                                 prospect_obj.score = score_data
-                                
+                
+                # Debug logging to understand company data
+                if prospect_obj.company:
+                    self.logger.debug(f"Storing prospect {prospect_obj.id} with company: {prospect_obj.company.name}")
+                else:
+                    self.logger.warning(f"Prospect {prospect_obj.id} has no company data")
+                    
                 self.active_prospects[prospect_obj.id] = prospect_obj
             
-            self.logger.info("Multi-source search completed", prospects_found=len(scored_prospects))
+            self.logger.info(f"Multi-source search completed - Prospects_Found: {len(scored_prospects)}")
             
             return {
                 "status": "success",
@@ -310,7 +318,7 @@ class ADKProspectAgent(ADKAgent):
             }
             
         except Exception as e:
-            self.logger.error("Error in multi-source prospect search", error=str(e))
+            self.logger.error(f"Error in multi-source prospect search - Error: {str(e)}")
             return {"status": "error", "error_message": str(e)}
     
     # Individual scoring removed - only batch scoring is used now
@@ -336,7 +344,13 @@ class ADKProspectAgent(ADKAgent):
             prospects = []
             for prospect_id in prospect_ids:
                 if prospect_id in self.active_prospects:
-                    prospects.append(self.active_prospects[prospect_id])
+                    prospect = self.active_prospects[prospect_id]
+                    # Debug logging
+                    if prospect.company:
+                        self.logger.debug(f"Retrieved prospect {prospect_id} with company: {prospect.company.name}")
+                    else:
+                        self.logger.warning(f"Retrieved prospect {prospect_id} has no company data")
+                    prospects.append(prospect)
             
             # Apply filters
             min_score = ranking_criteria.get("min_score", 0.0)
@@ -368,7 +382,7 @@ class ADKProspectAgent(ADKAgent):
             }
             
         except Exception as e:
-            self.logger.error("Error ranking prospects", error=str(e))
+            self.logger.error(f"Error ranking prospects - Error: {str(e)}")
             return {"status": "error", "error_message": str(e)}
     
     async def generate_prospect_insights(
@@ -416,7 +430,16 @@ class ADKProspectAgent(ADKAgent):
             Return as structured JSON with insights and recommendations.
             """
             
-            insights = await self.process_message(insights_prompt)
+            # Use process_json_request to prevent recursive tool calls
+            insights_raw = await self.process_json_request(insights_prompt)
+            
+            # Parse the JSON string to maintain dict structure
+            try:
+                import json
+                insights = json.loads(insights_raw) if isinstance(insights_raw, str) else insights_raw
+            except (json.JSONDecodeError, TypeError):
+                self.logger.warning("Failed to parse prospect insights JSON, using raw string")
+                insights = {"raw_insights": insights_raw}
             
             return {
                 "status": "success",
@@ -426,7 +449,7 @@ class ADKProspectAgent(ADKAgent):
             }
             
         except Exception as e:
-            self.logger.error("Error generating prospect insights", error=str(e))
+            self.logger.error(f"Error generating prospect insights - Error: {str(e)}")
             return {"status": "error", "error_message": str(e)}
     
     async def enrich_prospect_data(
@@ -481,7 +504,7 @@ class ADKProspectAgent(ADKAgent):
             }
             
         except Exception as e:
-            self.logger.error("Error enriching prospect data", prospect_id=prospect_id, error=str(e))
+            self.logger.error(f"Error enriching prospect data - Prospect_Id: {prospect_id}, Error: {str(e)}")
             return {"status": "error", "error_message": str(e)}
     
     def _match_companies_and_people(
@@ -523,6 +546,25 @@ class ADKProspectAgent(ADKAgent):
         
         return prospects
     
+    def _get_employee_range(self, employee_count: int) -> str:
+        """Convert numeric employee count to range string."""
+        if employee_count <= 10:
+            return "1-10"
+        elif employee_count <= 50:
+            return "11-50"
+        elif employee_count <= 200:
+            return "51-200"
+        elif employee_count <= 500:
+            return "201-500"
+        elif employee_count <= 1000:
+            return "501-1000"
+        elif employee_count <= 5000:
+            return "1001-5000"
+        elif employee_count <= 10000:
+            return "5001-10000"
+        else:
+            return "10000+"
+    
     def _dict_to_prospect(self, prospect_data: Dict[str, Any]) -> Prospect:
         """Convert dictionary to Prospect object."""
         
@@ -532,10 +574,21 @@ class ADKProspectAgent(ADKAgent):
         # Handle HDW Company objects vs dictionaries
         if hasattr(company_data, '__class__') and company_data.__class__.__name__ in ['Company', 'LinkedinCompany']:
             # It's an HDW Company or LinkedinCompany object, extract its attributes
+            # Extract employee count if available
+            employee_count = getattr(company_data, 'employee_count', None)
+            employee_range = None
+            if employee_count:
+                # Set both employee_count (numeric) and employee_range (string)
+                if isinstance(employee_count, (int, float)):
+                    employee_range = self._get_employee_range(int(employee_count))
+                else:
+                    employee_range = str(employee_count)
+            
             company = Company(
                 name=getattr(company_data, 'name', 'Unknown'),
                 industry=getattr(company_data, 'industry', 'Unknown'),
-                employee_range=str(getattr(company_data, 'employee_count', '')) if hasattr(company_data, 'employee_count') else None,
+                employee_count=int(employee_count) if employee_count and str(employee_count).isdigit() else None,
+                employee_range=employee_range,
                 revenue=getattr(company_data, 'revenue', None),
                 headquarters=getattr(company_data, 'headquarters', None),
                 domain=getattr(company_data, 'website', None),
@@ -548,10 +601,38 @@ class ADKProspectAgent(ADKAgent):
             if isinstance(industry, dict):
                 industry = industry.get("value", "Unknown")
             
+            # Extract employee count from various possible fields
+            employee_count = None
+            employee_range = None
+            
+            if isinstance(company_data, dict):
+                # Try different field names for employee count
+                for field in ['employee_count', 'employees', 'size', 'company_size']:
+                    if field in company_data and company_data[field]:
+                        value = company_data[field]
+                        if isinstance(value, (int, float)):
+                            employee_count = int(value)
+                            employee_range = self._get_employee_range(employee_count)
+                            break
+                        elif isinstance(value, str) and value.isdigit():
+                            employee_count = int(value)
+                            employee_range = self._get_employee_range(employee_count)
+                            break
+                        elif isinstance(value, str):
+                            employee_range = value
+                            # Try to extract numeric value from ranges like "50-200"
+                            if '-' in value:
+                                try:
+                                    parts = value.split('-')
+                                    employee_count = int(parts[0])
+                                except:
+                                    pass
+            
             company = Company(
                 name=company_data.get("name", "Unknown") if isinstance(company_data, dict) else "Unknown",
                 industry=industry,
-                employee_range=company_data.get("size") or company_data.get("employee_range") or company_data.get("employee_count_range") if isinstance(company_data, dict) else None,
+                employee_count=employee_count,
+                employee_range=employee_range or company_data.get("employee_range") or company_data.get("employee_count_range") if isinstance(company_data, dict) else None,
                 revenue=company_data.get("revenue") if isinstance(company_data, dict) else None,
                 headquarters=company_data.get("location") or company_data.get("headquarters") or company_data.get("headquarter_location") if isinstance(company_data, dict) else None,
                 domain=company_data.get("website") or company_data.get("domain") if isinstance(company_data, dict) else None,
@@ -649,17 +730,31 @@ class ADKProspectAgent(ADKAgent):
             # Create batch scoring prompt
             prospects_info = []
             for i, prospect in enumerate(prospects):
+                company_name = prospect.company.name if prospect.company.name else "Unknown"
+                industry = prospect.company.industry if prospect.company.industry else "Not specified"
+                size = prospect.company.employee_range if prospect.company.employee_range else "Not specified"
+                person_name = f"{prospect.person.first_name or 'Unknown'} {prospect.person.last_name or ''}".strip()
+                title = prospect.person.title if prospect.person.title else "Not specified"
+                seniority = prospect.person.seniority_level if prospect.person.seniority_level else "Not specified"
+                
                 prospects_info.append(f"""
 Prospect {i+1}:
-- Company: {prospect.company.name}
-- Industry: {prospect.company.industry}
-- Size: {prospect.company.employee_range}
-- Person: {prospect.person.first_name} {prospect.person.last_name}
-- Title: {prospect.person.title}
-- Seniority: {prospect.person.seniority_level}""")
+- Company: {company_name}
+- Industry: {industry}
+- Size: {size}
+- Person: {person_name}
+- Title: {title}
+- Seniority: {seniority}""")
             
             batch_prompt = f"""
-Score these {len(prospects)} prospects against the ICP criteria. Analyze how well each matches.
+Score these {len(prospects)} prospects against the ICP criteria.
+
+IMPORTANT: Return ONLY a JSON array. No explanatory text before or after the JSON.
+If data is missing, use these defaults:
+- Company size: If unknown, assume it doesn't match size criteria (score 0.3)
+- Industry: If unknown, assume partial match (score 0.4)
+- Location: If not specified, assume it matches
+- Seniority: If not specified, check job title for clues
 
 ICP Criteria:
 {json.dumps(icp_criteria, indent=2, cls=DateTimeEncoder)}
@@ -667,7 +762,7 @@ ICP Criteria:
 Prospects to Score:
 {"".join(prospects_info)}
 
-Return a JSON array where each element corresponds to a prospect in order:
+Return ONLY this JSON array structure:
 [
     {{
         "prospect_index": 1,
@@ -680,7 +775,7 @@ Return a JSON array where each element corresponds to a prospect in order:
     ...
 ]
 
-Be strict but fair. Perfect matches get 0.9-1.0, good matches 0.7-0.8, okay matches 0.5-0.6, poor matches below 0.5.
+Scoring guide: Perfect matches 0.9-1.0, good matches 0.7-0.8, okay matches 0.5-0.6, poor matches below 0.5.
 """
             
             # Use process_json_request to prevent recursive tool calls
@@ -701,7 +796,7 @@ Be strict but fair. Perfect matches get 0.9-1.0, good matches 0.7-0.8, okay matc
                             company_match_score=score_info.get("company_match_score", 0.5),
                             person_match_score=score_info.get("person_match_score", 0.5),
                             criteria_scores=score_info.get("criteria_scores", {}),
-                            metadata={"reasoning": score_info.get("reasoning", "")}
+                            score_explanation=score_info.get("reasoning", "")
                         )
                     else:
                         # Fallback if not enough scores returned
@@ -713,7 +808,13 @@ Be strict but fair. Perfect matches get 0.9-1.0, good matches 0.7-0.8, okay matc
                         )
                     
                     # Convert to dict for serialization
-                    scored_prospects.append(prospect.model_dump() if hasattr(prospect, 'model_dump') else prospect.__dict__)
+                    prospect_dict = prospect.model_dump() if hasattr(prospect, 'model_dump') else prospect.__dict__
+                    # Debug log to check company data
+                    if "company" in prospect_dict and prospect_dict["company"]:
+                        self.logger.debug(f"Scored prospect has company: {prospect_dict['company'].get('name', 'NO NAME KEY')}")
+                    else:
+                        self.logger.warning(f"Scored prospect missing company data")
+                    scored_prospects.append(prospect_dict)
                 
                 self.logger.info(f"Batch scored {len(scored_prospects)} prospects in one LLM call")
                 return {
@@ -722,17 +823,14 @@ Be strict but fair. Perfect matches get 0.9-1.0, good matches 0.7-0.8, okay matc
                 }
                 
             except json.JSONDecodeError as e:
-                self.logger.error("JSON parsing failed in batch scoring", 
-                                error=str(e), 
-                                raw_response=batch_response[:500],  # Log first 500 chars
-                                extracted_json=json_str[:200])  # Log first 200 chars of extracted JSON
+                self.logger.error(f"JSON parsing failed in batch scoring - Error: {str(e)} - Raw_Response: {batch_response[:500]} - Extracted_JSON: {json_str[:200]}")
                 return {"status": "error", "error_message": f"JSON parsing failed: {str(e)}"}
             except Exception as e:
-                self.logger.error("Unexpected error in batch scoring", error=str(e))
+                self.logger.error(f"Unexpected error in batch scoring - Error: {str(e)}")
                 return {"status": "error", "error_message": str(e)}
                 
         except Exception as e:
-            self.logger.error("Error in batch scoring", error=str(e))
+            self.logger.error(f"Error in batch scoring - Error: {str(e)}")
             return {"status": "error", "error_message": str(e)}
     
     async def _search_hdw_prospects(
@@ -748,6 +846,8 @@ Be strict but fair. Perfect matches get 0.9-1.0, good matches 0.7-0.8, okay matc
             hdw_client = self.external_clients["horizondatawave"]
             people_found = []
             companies_found = []
+            
+            self.logger.info(f"HDW search starting - Industries: {industries}, Target roles: {target_roles}, Company sizes: {company_sizes}, Location: {location_filter}")
             
             # Convert company sizes to HDW format
             hdw_employee_counts = []
@@ -782,6 +882,24 @@ Be strict but fair. Perfect matches get 0.9-1.0, good matches 0.7-0.8, okay matc
                         industry_urn = f"urn:li:industry:{result[0].urn.value}"
                         industry_urns.append(industry_urn)
                         self.logger.info(f"Found industry URN for '{industry_name}': {industry_urn}")
+                    else:
+                        self.logger.warning(f"Could not find industry URN for '{industry_name}'")
+            
+            # If no AI/ML specific URNs found, use broader tech search
+            if not industry_urns and any(ind in ["Artificial Intelligence", "Machine Learning", "AI", "ML"] for ind in industries):
+                self.logger.info("No AI/ML industry URNs found, falling back to technology/software search")
+                # Try broader technology categories
+                fallback_industries = ["Technology", "Software", "Computer Software", "Information Technology"]
+                for industry_name in fallback_industries[:2]:
+                    try:
+                        result = await asyncio.to_thread(hdw_client.search_industries, name=industry_name, count=1)
+                        if result:
+                            industry_urn = f"urn:li:industry:{result[0].urn.value}"
+                            industry_urns.append(industry_urn)
+                            self.logger.info(f"Found fallback industry URN for '{industry_name}': {industry_urn}")
+                            break
+                    except Exception as e:
+                        self.logger.debug(f"Failed to find fallback industry '{industry_name}': {e}")
             
             # Search for location URNs if needed
             location_urns = None
@@ -816,6 +934,11 @@ Be strict but fair. Perfect matches get 0.9-1.0, good matches 0.7-0.8, okay matc
             
             # Search people using HDW
             keywords = " ".join(target_roles[:2]) if target_roles else "Sales Executive"
+            
+            # Enhance keywords for AI/ML search if relevant
+            if any(ind in ["Artificial Intelligence", "Machine Learning", "AI", "ML", "LLM", "GenAI"] for ind in industries):
+                keywords = f"{keywords} AI ML artificial intelligence machine learning"
+                self.logger.info(f"Enhanced search keywords for AI/ML: {keywords}")
             
             try:
                 users = await asyncio.to_thread(
@@ -890,11 +1013,18 @@ Be strict but fair. Perfect matches get 0.9-1.0, good matches 0.7-0.8, okay matc
             from integrations.exa_websets import ExaExtractor
             extractor = ExaExtractor(cache_manager=self.cache_manager)
             
+            self.logger.info(f"Exa search starting - Industries: {industries}, Target roles: {target_roles}, Location: {location_filter}")
+            
             # Build enhanced search query
             search_parts = []
             
             if target_roles and industries:
-                role_industry_query = f"People who are {' OR '.join(target_roles[:2])} at {' OR '.join(industries[:2])} companies"
+                # Make the query more specific for AI/ML companies
+                if any(ind in ["Artificial Intelligence", "Machine Learning", "AI", "ML", "LLM", "GenAI"] for ind in industries):
+                    # Use specific AI/ML keywords
+                    role_industry_query = f"People who are {' OR '.join(target_roles[:2])} at AI artificial intelligence machine learning LLM companies"
+                else:
+                    role_industry_query = f"People who are {' OR '.join(target_roles[:2])} at {' OR '.join(industries[:2])} companies"
                 search_parts.append(role_industry_query)
             
             # Add buying signals
@@ -1111,10 +1241,7 @@ Be strict but fair. Perfect matches get 0.9-1.0, good matches 0.7-0.8, okay matc
             Dictionary with refined search results
         """
         try:
-            self.logger.info("Refining prospect search based on feedback", 
-                           feedback_length=len(feedback),
-                           good_prospects=len(good_prospect_ids or []),
-                           bad_prospects=len(bad_prospect_ids or []))
+            self.logger.info(f"Refining prospect search based on feedback - Feedback_Length: {len(feedback)}, Good_Prospects: {len(good_prospect_ids or [])}, Bad_Prospects: {len(bad_prospect_ids or [])}")
             
             # Analyze good and bad prospects to understand patterns
             good_prospects = []
@@ -1241,7 +1368,7 @@ Be strict but fair. Perfect matches get 0.9-1.0, good matches 0.7-0.8, okay matc
             }
             
         except Exception as e:
-            self.logger.error("Error refining prospect search", error=str(e))
+            self.logger.error(f"Error refining prospect search - Error: {str(e)}")
             return {"status": "error", "error_message": str(e)}
     
     async def _extract_refinements_from_feedback(self, feedback: str) -> Dict[str, Any]:

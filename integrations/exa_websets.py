@@ -74,8 +74,18 @@ class ExaWebsetsAPI:
             return {"id": webset.id, "status": "created"}
             
         except Exception as e:
+            error_msg = str(e)
             logger.error(f"Error creating webset: {e}")
-            return {}
+            
+            # Check for specific API errors
+            if "403" in error_msg and "credits" in error_msg.lower():
+                logger.warning("Insufficient Exa API credits - webset creation failed")
+                return {"error": "insufficient_credits", "message": "Exa API credits exhausted"}
+            elif "403" in error_msg:
+                logger.warning("Exa API access forbidden - check API key or permissions")
+                return {"error": "access_forbidden", "message": "Exa API access denied"}
+            
+            return {"error": "creation_failed", "message": error_msg}
     
     def get_webset(self, webset_id: str) -> Dict:
         """
@@ -329,7 +339,13 @@ class ExaExtractor:
             
             webset_id = webset.get("id")
             if not webset_id:
-                logger.error("Failed to create webset")
+                if webset.get("error") == "insufficient_credits":
+                    logger.warning("Exa API credits exhausted - YC founder extraction unavailable")
+                    return []
+                elif webset.get("error"):
+                    logger.error(f"Failed to create webset: {webset.get('message', 'Unknown error')}")
+                else:
+                    logger.error("Failed to create webset")
                 return []
             
             logger.info(f"Created webset {webset_id}, waiting for initial results...")
@@ -417,7 +433,13 @@ class ExaExtractor:
             
             webset_id = webset.get("id")
             if not webset_id:
-                logger.error("Failed to create webset")
+                if webset.get("error") == "insufficient_credits":
+                    logger.warning("Exa API credits exhausted - YC founder extraction unavailable")
+                    return []
+                elif webset.get("error"):
+                    logger.error(f"Failed to create webset: {webset.get('message', 'Unknown error')}")
+                else:
+                    logger.error("Failed to create webset")
                 return []
             
             logger.info(f"Created webset {webset_id}, waiting for initial results...")
@@ -490,6 +512,14 @@ class ExaExtractor:
         location = enrichments.get("Company location", "").strip()
         website = enrichments.get("Company website URL", "").strip()
         industry = enrichments.get("Industry or business sector", "").strip()
+        company_size_raw = enrichments.get("Company size (number of employees)", "").strip()
+        
+        # Parse company size into structured format
+        employee_count = None
+        employee_range = None
+        
+        if company_size_raw:
+            employee_count, employee_range = self._parse_company_size(company_size_raw)
         
         # Basic validation
         if not name:
@@ -501,6 +531,9 @@ class ExaExtractor:
             'location': location,
             'website': website,
             'industry': industry,
+            'employee_count': employee_count,
+            'employee_range': employee_range,
+            'company_size_raw': company_size_raw,  # Keep original for debugging
             'source_url': url,
             'extracted_at': datetime.now().isoformat()
         }
@@ -751,6 +784,131 @@ class ExaExtractor:
             logger.info(f"Cleared {count} cached webset IDs from persistent cache")
         else:
             logger.info("Cleared in-memory webset cache")
+    
+    def _parse_company_size(self, size_text: str) -> tuple[Optional[int], Optional[str]]:
+        """
+        Parse company size text into numeric count and standardized range.
+        
+        Args:
+            size_text: Raw company size text from Exa enrichments
+            
+        Returns:
+            Tuple of (employee_count, employee_range)
+        """
+        if not size_text:
+            return None, None
+            
+        size_text = size_text.lower().strip()
+        
+        # Handle numeric ranges like "50-200", "1,000-5,000", "1000-5000"
+        import re
+        range_pattern = r'(\d+(?:,\d+)*)\s*[-–]\s*(\d+(?:,\d+)*)'
+        range_match = re.search(range_pattern, size_text)
+        
+        if range_match:
+            try:
+                start_num = int(range_match.group(1).replace(',', ''))
+                end_num = int(range_match.group(2).replace(',', ''))
+                
+                # Use midpoint for employee_count
+                employee_count = (start_num + end_num) // 2
+                
+                # Convert to standardized range format
+                employee_range = self._standardize_employee_range(start_num, end_num)
+                
+                return employee_count, employee_range
+            except ValueError:
+                pass
+        
+        # Handle single numbers like "500 employees", "1,200", "about 50"
+        number_pattern = r'(\d+(?:,\d+)*)'
+        number_match = re.search(number_pattern, size_text)
+        
+        if number_match:
+            try:
+                employee_count = int(number_match.group(1).replace(',', ''))
+                employee_range = self._get_employee_range_from_count(employee_count)
+                return employee_count, employee_range
+            except ValueError:
+                pass
+        
+        # Handle descriptive terms
+        descriptive_mappings = {
+            # Small companies
+            'startup': (15, '1-50'),
+            'small': (25, '1-50'),
+            'small team': (10, '1-10'),
+            'tiny': (5, '1-10'),
+            'micro': (3, '1-10'),
+            
+            # Medium companies
+            'medium': (150, '51-200'),
+            'mid-size': (150, '51-200'),
+            'growing': (100, '51-200'),
+            
+            # Large companies
+            'large': (1000, '501-1000'),
+            'big': (2000, '1001-5000'),
+            'enterprise': (5000, '1001-5000'),
+            'corporation': (10000, '5001-10000'),
+            'multinational': (20000, '10000+'),
+            'fortune 500': (50000, '10000+'),
+            'global': (25000, '10000+')
+        }
+        
+        for term, (count, range_str) in descriptive_mappings.items():
+            if term in size_text:
+                return count, range_str
+        
+        # Default fallback - try to extract any number as approximate size
+        all_numbers = re.findall(r'\d+', size_text.replace(',', ''))
+        if all_numbers:
+            try:
+                employee_count = int(all_numbers[0])
+                employee_range = self._get_employee_range_from_count(employee_count)
+                return employee_count, employee_range
+            except ValueError:
+                pass
+        
+        return None, None
+    
+    def _standardize_employee_range(self, start: int, end: int) -> str:
+        """Convert numeric range to standardized format."""
+        if end <= 10:
+            return "1-10"
+        elif end <= 50:
+            return "11-50"
+        elif end <= 200:
+            return "51-200"
+        elif end <= 500:
+            return "201-500"
+        elif end <= 1000:
+            return "501-1000"
+        elif end <= 5000:
+            return "1001-5000"
+        elif end <= 10000:
+            return "5001-10000"
+        else:
+            return "10000+"
+    
+    def _get_employee_range_from_count(self, count: int) -> str:
+        """Convert employee count to standardized range."""
+        if count <= 10:
+            return "1-10"
+        elif count <= 50:
+            return "11-50"
+        elif count <= 200:
+            return "51-200"
+        elif count <= 500:
+            return "201-500"
+        elif count <= 1000:
+            return "501-1000"
+        elif count <= 5000:
+            return "1001-5000"
+        elif count <= 10000:
+            return "5001-10000"
+        else:
+            return "10000+"
 
 
 def test_exa_integration():

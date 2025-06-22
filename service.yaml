@@ -14,6 +14,7 @@ spec:
         run.googleapis.com/cpu: "1"
         run.googleapis.com/timeout: "3600s"
         run.googleapis.com/execution-environment: gen2
+        run.googleapis.com/service-account: adk-agent-memory@bayram-adk-hack.iam.gserviceaccount.com
     spec:
       containerConcurrency: 10
       timeoutSeconds: 3600
@@ -30,6 +31,12 @@ spec:
             secretKeyRef:
               name: adk-secrets
               key: google-api-key
+        - name: GOOGLE_CLOUD_PROJECT
+          value: "bayram-adk-hack"
+        - name: GOOGLE_CLOUD_LOCATION
+          value: "us-central1"
+        - name: VERTEX_AI_ENABLED
+          value: "true"
         - name: HDW_API_TOKEN
           valueFrom:
             secretKeyRef:

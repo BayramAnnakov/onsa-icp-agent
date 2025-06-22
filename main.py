@@ -7,17 +7,19 @@ import os
 import sys
 import asyncio
 from pathlib import Path
-import logging
 
 # Setup Python path
 sys.path.insert(0, str(Path(__file__).parent))
 
-# Configure logging for Cloud Run
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+from utils.logging_config import setup_logging, get_logger
+
+# Configure logging with file output
+setup_logging(
+    log_file="logs/adk_agent_main.log",
+    console_level="INFO",
+    file_level="DEBUG"
 )
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 def get_port():
     """Get port from environment or default to 8080."""
@@ -120,45 +122,68 @@ def create_gradio_app():
             }
             
             # Define interaction functions
-            async def process_message_async(message, history):
-                """Process user message asynchronously."""
+            async def process_message_stream_async(message, history):
+                """Process user message with streaming."""
                 if not message.strip():
-                    return history, ""
+                    yield history, ""
+                    return
                 
                 try:
                     # Start new conversation if none exists
                     if not web_interface.current_conversation_id:
                         await web_interface.start_new_conversation()
                     
-                    # Process message using full ADK system
-                    updated_history, status = await web_interface.process_message(
+                    # Stream responses using the new streaming method
+                    async for updated_history, status in web_interface.process_message_stream(
                         message=message,
                         history=history,
                         agent_type="Main Workflow",  # Use main workflow for full system
                         attachments=None
-                    )
-                    
-                    # Update conversation info
-                    conversation = web_interface.orchestrator.conversations.get(web_interface.current_conversation_id)
-                    info = {
-                        "conversation_id": web_interface.current_conversation_id[:8] + "...",
-                        "step": conversation.current_step.value if conversation else "unknown",
-                        "messages": len(conversation.messages) if conversation else 0,
-                        "timestamp": conversation.updated_at.isoformat() if conversation else None
-                    }
-                    
-                    # Return the updated history directly
-                    return updated_history, ""
+                    ):
+                        # Update conversation info
+                        conversation = web_interface.orchestrator.conversations.get(web_interface.current_conversation_id)
+                        if conversation:
+                            info = {
+                                "conversation_id": web_interface.current_conversation_id[:8] + "...",
+                                "step": conversation.current_step.value,
+                                "messages": len(conversation.messages),
+                                "timestamp": conversation.updated_at.isoformat()
+                            }
+                            # Note: We can't update conversation_info in streaming mode without additional work
+                        
+                        # Yield the updated history
+                        yield updated_history, ""
                     
                 except Exception as e:
                     logger.error(f"Error processing message: {str(e)}")
                     error_response = f"❌ Error: {str(e)}. Please try again or start a new conversation."
                     history.append((message, error_response))
-                    return history, ""
+                    yield history, ""
             
-            def process_message_sync(message, history):
-                """Synchronous wrapper for message processing."""
-                return asyncio.run(process_message_async(message, history))
+            def process_message_stream_sync(message, history):
+                """Synchronous wrapper for streaming message processing."""
+                # Create an event loop if needed
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_closed():
+                        raise RuntimeError("Event loop is closed")
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                
+                # Run the async generator
+                async_gen = process_message_stream_async(message, history)
+                
+                # Yield from the async generator
+                while True:
+                    try:
+                        result = loop.run_until_complete(async_gen.__anext__())
+                        yield result
+                    except StopAsyncIteration:
+                        break
+                    except Exception as e:
+                        logger.error(f"Streaming error: {str(e)}")
+                        raise
             
             async def clear_conversation_async():
                 """Clear conversation asynchronously."""
@@ -182,15 +207,15 @@ def create_gradio_app():
                 """Set example business description."""
                 return examples.get(example_type, "")
             
-            # Event handlers
+            # Event handlers - now with streaming!
             send_btn.click(
-                process_message_sync,
+                process_message_stream_sync,
                 inputs=[msg, chatbot],
                 outputs=[chatbot, msg]
             )
             
             msg.submit(
-                process_message_sync,
+                process_message_stream_sync,
                 inputs=[msg, chatbot],
                 outputs=[chatbot, msg]
             )

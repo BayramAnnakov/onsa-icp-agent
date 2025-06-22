@@ -23,12 +23,13 @@ class ADKResearchAgent(ADKAgent):
     - People and content research via Exa
     """
     
-    def __init__(self, config: Config, cache_manager: Optional[CacheManager] = None):
+    def __init__(self, config: Config, cache_manager: Optional[CacheManager] = None, memory_manager=None):
         super().__init__(
             agent_name="research_agent",
             agent_description="Conducts comprehensive web research and analysis for business intelligence and competitive insights",
             config=config,
-            cache_manager=cache_manager
+            cache_manager=cache_manager,
+            memory_manager=memory_manager
         )
         
         # Research session management
@@ -38,6 +39,7 @@ class ADKResearchAgent(ADKAgent):
         self._setup_external_clients()
         
         # Setup tools - only add what Research agent needs
+        self.setup_external_tools()  # This sets up memory tools from parent
         self.setup_research_specific_tools()
         self.setup_research_tools()
         
@@ -79,7 +81,7 @@ class ADKResearchAgent(ADKAgent):
             func=self.search_people_exa
         )
         
-        self.logger.info("Research-specific external tools configured", tool_count=len(self.tools))
+        self.logger.info(f"Research-specific external tools configured - Tool_Count: {len(self.tools)}")
     
     def setup_research_tools(self) -> None:
         """Setup research-specific tools."""
@@ -132,9 +134,9 @@ class ADKResearchAgent(ADKAgent):
         """
         try:
             if focus_areas is None:
-                focus_areas = ["business_model", "technology", "team", "market_position"]
+                focus_areas = ["business_model", "technology", "customers", "market_position"]
             
-            self.logger.info("Starting comprehensive company analysis", company=company_identifier, depth=analysis_depth)
+            self.logger.info(f"Starting comprehensive company analysis - Company: {company_identifier}, Depth: {analysis_depth}")
             
             analysis_results = {
                 "company_identifier": company_identifier,
@@ -143,23 +145,90 @@ class ADKResearchAgent(ADKAgent):
                 "findings": {}
             }
             
-            # 1. Search for company in HorizonDataWave
-            if "horizondatawave" in self.external_clients:
-                hdw_result = self.search_companies_hdw(
-                    query=company_identifier,
+            # If identifier is a URL, analyze website first to extract company name
+            extracted_company_name = None
+            if company_identifier.startswith("http") or "." in company_identifier:
+                if not company_identifier.startswith("http"):
+                    company_identifier = f"https://{company_identifier}"
+                
+                # Analyze website first
+                website_result = await self.website_content_analysis(
+                    url=company_identifier,
+                    analysis_focus=focus_areas
+                )
+                
+                # Handle case where website_result might be a string or not properly structured
+                if not isinstance(website_result, dict):
+                    self.logger.warning(f"Website analysis result is not a dictionary: {type(website_result)}")
+                    if isinstance(website_result, str):
+                        try:
+                            website_result = json.loads(website_result)
+                        except:
+                            website_result = {"status": "error", "error_message": "Invalid website result format"}
+                    else:
+                        website_result = {"status": "error", "error_message": f"Unexpected website result type: {type(website_result)}"}
+                
+                if website_result.get("status") == "success":
+                    analysis_results["findings"]["website_analysis"] = website_result["analysis"]
+                    analysis_results["sources_used"].append("firecrawl")
+                    
+                    # Try to extract company name from website analysis
+                    try:
+                        if isinstance(website_result["analysis"], str):
+                            import json, re
+                            analysis_data = json.loads(website_result["analysis"])
+                            # Look in business model section
+                            if "analysis" in analysis_data:
+                                business_section = analysis_data["analysis"].get("business_model", {})
+                                desc = business_section.get("description", "")
+                                # Extract company name patterns
+                                name_match = re.search(r'([\w]+\.ai|[\w]+\s+(?:Inc|Corp|LLC|Ltd))', desc, re.IGNORECASE)
+                                if name_match:
+                                    extracted_company_name = name_match.group(1).replace(".ai", "").strip()
+                    except Exception as e:
+                        self.logger.debug(f"Could not extract company name from website: {e}")
+            
+            # Search for company in HorizonDataWave using name (not URL)
+            search_query = extracted_company_name if extracted_company_name else (
+                company_identifier if not company_identifier.startswith("http") else None
+            )
+            
+            if "horizondatawave" in self.external_clients and search_query:
+                self.logger.info(f"Searching HDW for: {search_query}")
+                hdw_result = await self.search_companies_hdw(
+                    query=search_query,
                     limit=1
                 )
-                if hdw_result["status"] == "success" and hdw_result["companies"]:
-                    company_data = hdw_result["companies"][0]
+                
+                # Handle case where hdw_result might be a string or not properly structured
+                if not isinstance(hdw_result, dict):
+                    self.logger.warning(f"HDW result is not a dictionary: {type(hdw_result)}")
+                    if isinstance(hdw_result, str):
+                        try:
+                            hdw_result = json.loads(hdw_result)
+                        except:
+                            hdw_result = {"status": "error", "error_message": "Invalid HDW result format"}
+                    else:
+                        hdw_result = {"status": "error", "error_message": f"Unexpected HDW result type: {type(hdw_result)}"}
+                
+                if hdw_result.get("status") == "success" and hdw_result.get("companies"):
+                    company_obj = hdw_result["companies"][0]
+                    # Convert company object to dictionary
+                    company_data = {
+                        "name": getattr(company_obj, "name", None),
+                        "industry": getattr(company_obj, "industry", None),
+                        "company_size": getattr(company_obj, "company_size", None),
+                        "description": getattr(company_obj, "description", None),
+                        "website": getattr(company_obj, "website", None),
+                        "linkedin_url": getattr(company_obj, "linkedin_url", None),
+                        "founded_year": getattr(company_obj, "founded_year", None),
+                        "specialties": getattr(company_obj, "specialties", [])
+                    }
                     analysis_results["findings"]["linkedin_data"] = company_data
                     analysis_results["sources_used"].append("horizondatawave")
-                    
-                    # Use LinkedIn URL if available for website analysis
-                    if not company_identifier.startswith("http") and company_data.get("website"):
-                        company_identifier = company_data["website"]
             
-            # 2. Website analysis if URL is available
-            if company_identifier.startswith("http") or "." in company_identifier:
+            # If we haven't done website analysis yet (i.e., company name was provided)
+            if "website_analysis" not in analysis_results["findings"] and (company_identifier.startswith("http") or "." in company_identifier):
                 if not company_identifier.startswith("http"):
                     company_identifier = f"https://{company_identifier}"
                 
@@ -167,35 +236,40 @@ class ADKResearchAgent(ADKAgent):
                     url=company_identifier,
                     analysis_focus=focus_areas
                 )
-                if website_result["status"] == "success":
+                
+                # Handle case where website_result might be a string or not properly structured
+                if not isinstance(website_result, dict):
+                    self.logger.warning(f"Website analysis result is not a dictionary: {type(website_result)}")
+                    if isinstance(website_result, str):
+                        try:
+                            website_result = json.loads(website_result)
+                        except:
+                            website_result = {"status": "error", "error_message": "Invalid website result format"}
+                    else:
+                        website_result = {"status": "error", "error_message": f"Unexpected website result type: {type(website_result)}"}
+                
+                if website_result.get("status") == "success":
                     analysis_results["findings"]["website_analysis"] = website_result["analysis"]
                     analysis_results["sources_used"].append("firecrawl")
             
-            # 3. People research via Exa
-            if "exa" in self.external_clients:
-                company_name = (
-                    analysis_results["findings"].get("linkedin_data", {}).get("name") or
-                    company_identifier.split("//")[-1].split("/")[0].split(".")[0]
-                )
-                
-                people_result = await self.search_people_exa(
-                    query=f"{company_name} employees leadership team",
-                    limit=10,
-                    role_filter="leadership"
-                )
-                if people_result["status"] == "success":
-                    analysis_results["findings"]["team_analysis"] = people_result["people"]
-                    analysis_results["sources_used"].append("exa")
+            # 3. Generate AI-powered insights (Skipping people research for ICP)
+            insights_raw = await self._generate_company_insights(analysis_results["findings"], focus_areas)
             
-            # 4. Generate AI-powered insights
-            insights = await self._generate_company_insights(analysis_results["findings"], focus_areas)
+            # Parse the JSON string returned by _generate_company_insights to maintain dict structure
+            try:
+                import json
+                insights = json.loads(insights_raw) if isinstance(insights_raw, str) else insights_raw
+            except (json.JSONDecodeError, TypeError):
+                self.logger.warning("Failed to parse insights JSON, using raw string")
+                insights = {"raw_insights": insights_raw}
+            
             analysis_results["insights"] = insights
             
-            # 5. Store research session
+            # 4. Store research session
             session_id = f"research_{int(datetime.now().timestamp())}"
             self.active_research_sessions[session_id] = analysis_results
             
-            self.logger.info("Company analysis completed", company=company_identifier, sources=len(analysis_results["sources_used"]))
+            self.logger.info(f"Company analysis completed - Company: {company_identifier}, Sources: {len(analysis_results['sources_used'])}")
             
             return {
                 "status": "success",
@@ -204,7 +278,7 @@ class ADKResearchAgent(ADKAgent):
             }
             
         except Exception as e:
-            self.logger.error("Error in comprehensive company analysis", company=company_identifier, error=str(e))
+            self.logger.error(f"Error in comprehensive company analysis - Company: {company_identifier}, Error: {str(e)}")
             return {"status": "error", "error_message": str(e)}
     
     async def competitive_analysis(
@@ -224,7 +298,7 @@ class ADKResearchAgent(ADKAgent):
             Dictionary with competitive analysis
         """
         try:
-            self.logger.info("Starting competitive analysis", target=target_company, industry=industry)
+            self.logger.info(f"Starting competitive analysis - Target: {target_company}, Industry: {industry}")
             
             competitive_analysis = {
                 "target_company": target_company,
@@ -236,7 +310,7 @@ class ADKResearchAgent(ADKAgent):
             
             # 1. Find competitors via company search
             if "horizondatawave" in self.external_clients:
-                competitors_result = self.search_companies_hdw(
+                competitors_result = await self.search_companies_hdw(
                     query=f"{industry} companies",
                     limit=competitor_count + 2  # Get extra to filter out target company
                 )
@@ -283,7 +357,16 @@ class ADKResearchAgent(ADKAgent):
             """
             
             # Use process_json_request to prevent infinite recursion
-            insights = await self.process_json_request(insights_prompt)
+            insights_raw = await self.process_json_request(insights_prompt)
+            
+            # Parse the JSON string to maintain dict structure
+            try:
+                import json
+                insights = json.loads(insights_raw) if isinstance(insights_raw, str) else insights_raw
+            except (json.JSONDecodeError, TypeError):
+                self.logger.warning("Failed to parse competitive analysis insights JSON, using raw string")
+                insights = {"raw_insights": insights_raw}
+            
             competitive_analysis["market_insights"] = insights
             
             return {
@@ -292,7 +375,7 @@ class ADKResearchAgent(ADKAgent):
             }
             
         except Exception as e:
-            self.logger.error("Error in competitive analysis", error=str(e))
+            self.logger.error(f"Error in competitive analysis - Error: {str(e)}")
             return {"status": "error", "error_message": str(e)}
     
     async def industry_research(
@@ -315,7 +398,7 @@ class ADKResearchAgent(ADKAgent):
             if research_focus is None:
                 research_focus = ["trends", "challenges", "opportunities", "key_players"]
             
-            self.logger.info("Starting industry research", industry=industry, focus=research_focus)
+            self.logger.info(f"Starting industry research - Industry: {industry}, Focus: {research_focus}")
             
             research_results = {
                 "industry": industry,
@@ -326,7 +409,7 @@ class ADKResearchAgent(ADKAgent):
             
             # 1. Find key companies in the industry
             if "horizondatawave" in self.external_clients:
-                companies_result = self.search_companies_hdw(
+                companies_result = await self.search_companies_hdw(
                     query=f"{industry} companies leaders",
                     limit=10
                 )
@@ -362,7 +445,16 @@ class ADKResearchAgent(ADKAgent):
             """
             
             # Use process_json_request to prevent infinite recursion
-            insights = await self.process_json_request(insights_prompt)
+            insights_raw = await self.process_json_request(insights_prompt)
+            
+            # Parse the JSON string to maintain dict structure
+            try:
+                import json
+                insights = json.loads(insights_raw) if isinstance(insights_raw, str) else insights_raw
+            except (json.JSONDecodeError, TypeError):
+                self.logger.warning("Failed to parse industry research insights JSON, using raw string")
+                insights = {"raw_insights": insights_raw}
+            
             research_results["insights"] = insights
             
             return {
@@ -371,7 +463,7 @@ class ADKResearchAgent(ADKAgent):
             }
             
         except Exception as e:
-            self.logger.error("Error in industry research", industry=industry, error=str(e))
+            self.logger.error(f"Error in industry research - Industry: {industry}, Error: {str(e)}")
             return {"status": "error", "error_message": str(e)}
     
     async def website_content_analysis(
@@ -399,7 +491,18 @@ class ADKResearchAgent(ADKAgent):
                 max_depth=2
             )
             
-            if scrape_result["status"] != "success":
+            # Handle case where scrape_result might be a string or not properly structured
+            if not isinstance(scrape_result, dict):
+                self.logger.warning(f"Scrape result is not a dictionary: {type(scrape_result)}")
+                if isinstance(scrape_result, str):
+                    try:
+                        scrape_result = json.loads(scrape_result)
+                    except:
+                        scrape_result = {"status": "error", "error_message": "Invalid scrape result format"}
+                else:
+                    scrape_result = {"status": "error", "error_message": f"Unexpected scrape result type: {type(scrape_result)}"}
+            
+            if scrape_result.get("status") != "success":
                 return scrape_result
             
             # Analyze the content
@@ -425,7 +528,15 @@ class ADKResearchAgent(ADKAgent):
             """
             
             # Use process_json_request to prevent infinite recursion
-            analysis = await self.process_json_request(analysis_prompt)
+            analysis_raw = await self.process_json_request(analysis_prompt)
+            
+            # Parse the JSON string to maintain dict structure
+            try:
+                import json
+                analysis = json.loads(analysis_raw) if isinstance(analysis_raw, str) else analysis_raw
+            except (json.JSONDecodeError, TypeError):
+                self.logger.warning("Failed to parse website analysis JSON, using raw string")
+                analysis = {"raw_analysis": analysis_raw}
             
             return {
                 "status": "success",
@@ -436,7 +547,7 @@ class ADKResearchAgent(ADKAgent):
             }
             
         except Exception as e:
-            self.logger.error("Error in website content analysis", url=url, error=str(e))
+            self.logger.error(f"Error in website content analysis - Url: {url}, Error: {str(e)}")
             return {"status": "error", "error_message": str(e)}
     
     async def linkedin_company_research(
@@ -454,13 +565,13 @@ class ADKResearchAgent(ADKAgent):
             Dictionary with LinkedIn research results
         """
         try:
-            self.logger.info("Starting LinkedIn company research", company=company_name)
+            self.logger.info(f"Starting LinkedIn company research - Company: {company_name}")
             
             # Search for company in HorizonDataWave (LinkedIn data)
             if "horizondatawave" not in self.external_clients:
                 return {"status": "error", "error_message": "HorizonDataWave client not available"}
             
-            hdw_result = self.search_companies_hdw(
+            hdw_result = await self.search_companies_hdw(
                 query=company_name,
                 limit=1
             )
@@ -488,7 +599,7 @@ class ADKResearchAgent(ADKAgent):
             }
             
         except Exception as e:
-            self.logger.error("Error in LinkedIn company research", company=company_name, error=str(e))
+            self.logger.error(f"Error in LinkedIn company research - Company: {company_name}, Error: {str(e)}")
             return {"status": "error", "error_message": str(e)}
     
     async def _generate_company_insights(
@@ -510,10 +621,10 @@ class ADKResearchAgent(ADKAgent):
         1. Business model and strategy
         2. Market position and competitive advantages
         3. Technology and innovation approach
-        4. Team and leadership assessment
-        5. Growth trajectory and potential
-        6. Challenges and opportunities
-        7. Ideal customer profile indicators
+        4. Growth trajectory and potential
+        5. Challenges and opportunities
+        6. Ideal customer profile indicators
+        7. Target customer characteristics
         
         Return as structured analysis with clear insights and recommendations.
         """

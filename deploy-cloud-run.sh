@@ -35,15 +35,41 @@ gcloud services enable \
     cloudbuild.googleapis.com \
     run.googleapis.com \
     containerregistry.googleapis.com \
-    aiplatform.googleapis.com
+    aiplatform.googleapis.com \
+    storage.googleapis.com
 
-echo "3️⃣ Building Docker image..."
+echo "3️⃣ Setting up VertexAI resources..."
+# Create storage bucket if it doesn't exist
+BUCKET_NAME="${PROJECT_ID}-adk-sessions"
+if ! gsutil ls -b gs://$BUCKET_NAME >/dev/null 2>&1; then
+    echo "Creating storage bucket: $BUCKET_NAME"
+    gcloud storage buckets create gs://$BUCKET_NAME \
+        --location=$REGION \
+        --project=$PROJECT_ID
+else
+    echo "Storage bucket already exists: $BUCKET_NAME"
+fi
+
+# Grant permissions to service account
+SERVICE_ACCOUNT="adk-agent-memory@${PROJECT_ID}.iam.gserviceaccount.com"
+echo "Granting storage permissions to service account: $SERVICE_ACCOUNT"
+gcloud storage buckets add-iam-policy-binding gs://$BUCKET_NAME \
+    --member=serviceAccount:$SERVICE_ACCOUNT \
+    --role=roles/storage.objectUser
+
+# Grant Vertex AI permissions
+echo "Granting Vertex AI permissions to service account"
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member=serviceAccount:$SERVICE_ACCOUNT \
+    --role=roles/aiplatform.user
+
+echo "4️⃣ Building Docker image..."
 docker build -t $IMAGE_NAME .
 
-echo "4️⃣ Pushing image to Container Registry..."
+echo "5️⃣ Pushing image to Container Registry..."
 docker push $IMAGE_NAME
 
-echo "5️⃣ Deploying to Cloud Run..."
+echo "6️⃣ Deploying to Cloud Run..."
 gcloud run deploy $SERVICE_NAME \
     --image $IMAGE_NAME \
     --platform managed \
@@ -57,7 +83,7 @@ gcloud run deploy $SERVICE_NAME \
     --set-env-vars="PORT=8080" \
     --port 8080
 
-echo "6️⃣ Getting service URL..."
+echo "7️⃣ Getting service URL..."
 SERVICE_URL=$(gcloud run services describe $SERVICE_NAME --platform managed --region $REGION --format 'value(status.url)')
 
 echo ""

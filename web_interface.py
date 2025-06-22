@@ -15,12 +15,16 @@ from pathlib import Path
 from adk_main import ADKAgentOrchestrator
 from utils.config import Config
 from models import WorkflowStep
+from utils.logging_config import setup_logging, get_logger
 import structlog
-from setup_logging import setup_logging
 
-# Setup file logging
-log_file = setup_logging(log_dir="logs", log_level="INFO")
-logger = structlog.get_logger()
+# Setup logging with file output
+setup_logging(
+    log_file="logs/adk_agent_web.log",
+    console_level="INFO",
+    file_level="DEBUG"
+)
+logger = get_logger(__name__)
 
 
 class WebInterface:
@@ -29,15 +33,27 @@ class WebInterface:
     def __init__(self):
         self.config = Config.load_from_file()
         self.config.ensure_directories()
-        self.orchestrator = ADKAgentOrchestrator(self.config)
+        
+        # Initialize memory manager if VertexAI is enabled
+        memory_manager = None
+        if self.config.vertexai.enabled:
+            try:
+                from services.vertex_memory_service import VertexMemoryManager
+                memory_manager = VertexMemoryManager(self.config.vertexai)
+                logger.info("VertexAI memory manager initialized for web interface")
+            except Exception as e:
+                logger.error(f"Failed to initialize VertexAI memory: {str(e)}")
+        
+        self.orchestrator = ADKAgentOrchestrator(self.config, memory_manager=memory_manager)
         self.current_conversation_id: Optional[str] = None
         self.conversation_history: List[Tuple[str, str]] = []
+        self.current_prospects: List[Dict[str, Any]] = []  # Store prospects for table display
         
         # Session storage
         self.sessions_dir = Path("sessions")
         self.sessions_dir.mkdir(exist_ok=True)
         
-        logger.info("Web interface initialized")
+        logger.info(f"Web interface initialized - Memory enabled: {bool(memory_manager)}")
     
     async def start_new_conversation(self, user_id: str = "web_user") -> str:
         """Start a new conversation."""
@@ -173,6 +189,89 @@ class WebInterface:
         
         return "Please select a valid agent type."
     
+    async def process_message_stream(
+        self,
+        message: str,
+        history: List[Tuple[str, str]],
+        agent_type: str,
+        attachments: Optional[List[str]] = None
+    ):
+        """Process a user message with streaming responses.
+        
+        Yields (history, status, prospect_table_data, prospect_table_visible) tuples.
+        """
+        
+        try:
+            # Start conversation if needed
+            if not self.current_conversation_id:
+                await self.start_new_conversation()
+            
+            # Add user message to history
+            history.append((message, ""))
+            
+            # Process attachments if any
+            attachment_list = []
+            if attachments:
+                for attachment in attachments:
+                    attachment_list.append({
+                        "type": "url",
+                        "url": attachment
+                    })
+            
+            # Process message based on agent type
+            if agent_type == "Main Workflow":
+                # Collect full response for history tracking
+                full_response = ""
+                async for chunk in self.orchestrator.process_user_message_stream(
+                    self.current_conversation_id,
+                    message,
+                    attachment_list
+                ):
+                    full_response += chunk
+                    # Update the last message in history with accumulated response
+                    history[-1] = (message, full_response)
+                    
+                    # Check if we have prospects to display
+                    status = self.orchestrator.get_conversation_status(self.current_conversation_id)
+                    if status and status.get('current_step') == 'prospect_review' and status.get('prospect_count', 0) > 0:
+                        # Get prospects from orchestrator
+                        conversation = self.orchestrator.conversations.get(self.current_conversation_id)
+                        if conversation and hasattr(conversation, 'current_prospects'):
+                            # Get prospect details
+                            prospect_ids = conversation.current_prospects
+                            if prospect_ids and self.orchestrator.prospect_agent.active_prospects:
+                                prospects = []
+                                for pid in prospect_ids[:10]:  # Top 10
+                                    if pid in self.orchestrator.prospect_agent.active_prospects:
+                                        prospect = self.orchestrator.prospect_agent.active_prospects[pid]
+                                        prospects.append(prospect.model_dump())
+                                
+                                if prospects:
+                                    self.current_prospects = prospects
+                                    table_data = self._format_prospects_for_dataframe(prospects)
+                                    yield history, self._get_conversation_status(), table_data, True
+                                    continue
+                    
+                    yield history, self._get_conversation_status(), [], False
+            else:
+                # Direct agent interaction (non-streaming for now)
+                response = await self._process_direct_agent_message(
+                    agent_type,
+                    message,
+                    attachment_list
+                )
+                history[-1] = (message, response)
+                yield history, self._get_conversation_status(), [], False
+            
+        except Exception as e:
+            logger.error(f"Error processing message stream: {str(e)}")
+            error_response = f"❌ Error: {str(e)}"
+            if history and history[-1][1] == "":
+                history[-1] = (history[-1][0], error_response)
+            else:
+                history.append((message, error_response))
+            yield history, "Error occurred", [], False
+    
     def _get_conversation_status(self) -> str:
         """Get current conversation status."""
         
@@ -188,6 +287,62 @@ class WebInterface:
         prospect_count = status['prospect_count']
         
         return f"📊 Status: {step} | ICP: {icp_status} | Prospects: {prospect_count}"
+    
+    def _format_prospects_for_dataframe(self, prospects: List[Dict[str, Any]]) -> List[List[str]]:
+        """Format prospects for Gradio DataFrame display."""
+        data = []
+        
+        # Sort prospects by total_score in descending order
+        sorted_prospects = sorted(prospects, key=lambda p: p.get('score', {}).get('total_score', 0), reverse=True)
+        
+        for prospect in sorted_prospects[:10]:  # Limit to top 10
+            company = prospect.get('company', {})
+            person = prospect.get('person', {})
+            score_data = prospect.get('score', {})
+            
+            # Format name with LinkedIn link
+            first_name = person.get('first_name', 'Unknown')
+            last_name = person.get('last_name', '')
+            person_name = f"{first_name} {last_name}".strip()
+            linkedin_url = person.get('linkedin_url', '')
+            
+            if linkedin_url and linkedin_url != 'Not available':
+                # HTML link that opens in new tab
+                name_display = f'<a href="{linkedin_url}" target="_blank" style="color: #0066cc; text-decoration: none;">{person_name}</a>'
+            else:
+                name_display = person_name
+            
+            # Format company with LinkedIn link
+            company_name = company.get('name') or 'N/A'
+            company_linkedin = company.get('linkedin_url', '')
+            
+            if company_linkedin and company_linkedin != 'Not available':
+                # HTML link that opens in new tab
+                company_display = f'<a href="{company_linkedin}" target="_blank" style="color: #0066cc; text-decoration: none;">{company_name}</a>'
+            else:
+                company_display = company_name
+            
+            # Format score with emoji (already in 0-1 scale from scoring)
+            total_score = score_data.get('total_score', 0)
+            
+            if total_score >= 0.8:
+                score_emoji = "🟢"
+            elif total_score >= 0.6:
+                score_emoji = "🟡"
+            else:
+                score_emoji = "🔴"
+            
+            # Display as 0-10 scale for user readability
+            score_display = f"{score_emoji} {total_score * 10:.1f}"
+            
+            # Get reasoning from score_explanation
+            reasoning = score_data.get('score_explanation', 'No reasoning provided')
+            if len(reasoning) > 150:
+                reasoning = reasoning[:147] + "..."
+            
+            data.append([name_display, company_display, score_display, reasoning])
+        
+        return data
     
     def save_session(self, name: str, history: List[Tuple[str, str]]) -> str:
         """Save the current session."""
@@ -300,8 +455,20 @@ def create_interface():
                 # Chat interface
                 chatbot = gr.Chatbot(
                     label="Conversation",
-                    height=500,
+                    height=400,
                     show_copy_button=True
+                )
+                
+                # Prospect DataFrame (initially hidden)
+                prospect_table = gr.DataFrame(
+                    headers=["Name", "Company", "Score", "Reasoning"],
+                    datatype=["html", "html", "markdown", "str"],
+                    interactive=False,
+                    visible=False,
+                    label="🏆 Top Prospects",
+                    wrap=True,
+                    row_count=(10, "fixed"),
+                    col_count=(4, "fixed")
                 )
                 
                 with gr.Row():
@@ -374,7 +541,8 @@ def create_interface():
         # Event handlers
         async def respond(message, chat_history, agent, attach_text):
             if not message:
-                return chat_history, status.value
+                yield chat_history, status.value, gr.update(), gr.update()
+                return
             
             # Parse attachments
             attachments = []
@@ -389,21 +557,23 @@ def create_interface():
             if urls_in_message and not attachments:
                 attachments = urls_in_message
             
-            # Process message
-            updated_history, new_status = await web_interface.process_message(
+            # Process message with streaming
+            async for updated_history, new_status, table_data, table_visible in web_interface.process_message_stream(
                 message,
                 chat_history,
                 agent,
                 attachments
-            )
-            
-            return updated_history, new_status
+            ):
+                if table_visible and table_data:
+                    yield updated_history, new_status, gr.update(value=table_data, visible=True), gr.update()
+                else:
+                    yield updated_history, new_status, gr.update(), gr.update()
         
         # Submit handlers
         msg.submit(
             respond,
             [msg, chatbot, agent_type, attachments],
-            [chatbot, status]
+            [chatbot, status, prospect_table, msg]
         ).then(
             lambda: "",
             None,
@@ -413,7 +583,7 @@ def create_interface():
         submit.click(
             respond,
             [msg, chatbot, agent_type, attachments],
-            [chatbot, status]
+            [chatbot, status, prospect_table, msg]
         ).then(
             lambda: "",
             None,
@@ -423,18 +593,18 @@ def create_interface():
         # Session management
         async def start_new_session():
             await web_interface.start_new_conversation()
-            return [], "New session started", web_interface.get_saved_sessions()
+            return [], "New session started", web_interface.get_saved_sessions(), gr.update(visible=False)
         
         new_session.click(
             start_new_session,
             None,
-            [chatbot, status, session_dropdown]
+            [chatbot, status, session_dropdown, prospect_table]
         )
         
         clear.click(
-            lambda: ([], "History cleared"),
+            lambda: ([], "History cleared", gr.update(visible=False)),
             None,
-            [chatbot, status]
+            [chatbot, status, prospect_table]
         )
         
         # Save/Load handlers
@@ -474,14 +644,12 @@ def create_interface():
 if __name__ == "__main__":
     print("Starting ADK Multi-Agent Web Interface...")
     print("Loading configuration...")
-    print(f"📄 Logs will be saved to: {log_file}")
     
     try:
         app = create_interface()
         print("\n✅ Web interface ready!")
         print("🌐 Opening at http://localhost:7860")
         print("\nPress Ctrl+C to stop the server\n")
-        print("💡 To analyze logs for issues, run: python analyze_logs.py")
         
         app.launch(
             server_name="0.0.0.0",
@@ -492,5 +660,5 @@ if __name__ == "__main__":
         
     except Exception as e:
         print(f"\n❌ Error starting web interface: {str(e)}")
-        print(f"📄 Check logs at: {log_file}")
+        print("📄 Check logs for more details")
         raise

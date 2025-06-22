@@ -72,6 +72,11 @@ class CacheManager:
             if cached_item is None:
                 return None
             
+            # Ensure cached_item is a dictionary
+            if not isinstance(cached_item, dict):
+                self.logger.warning("Cache item is not a dictionary", key=cache_key, type=type(cached_item).__name__)
+                return None
+            
             # Check if item has expired
             if 'expires_at' in cached_item:
                 expires_at = datetime.fromisoformat(cached_item['expires_at'])

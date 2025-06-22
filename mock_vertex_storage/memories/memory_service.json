@@ -1,0 +1,11 @@
+{
+  "icp_agent_system:default": [
+    {
+      "session_id": "test_session_123",
+      "app_name": "icp_agent_system",
+      "user_id": "default",
+      "state": {},
+      "timestamp": "2025-06-21T21:22:56.023302"
+    }
+  ]
+}

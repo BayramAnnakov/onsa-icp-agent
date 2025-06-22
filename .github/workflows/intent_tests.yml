@@ -1,0 +1,280 @@
+name: Intent Understanding Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'adk_main.py'
+      - 'agents/**'
+      - 'tests/test_intent_**'
+      - 'tests/intent_test_data.py'
+      - '.github/workflows/intent_tests.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'adk_main.py'
+      - 'agents/**'
+      - 'tests/test_intent_**'
+      - 'tests/intent_test_data.py'
+  schedule:
+    # Run tests daily at 6 AM UTC
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      test_mode:
+        description: 'Test mode to run'
+        required: true
+        default: 'quick'
+        type: choice
+        options:
+          - quick
+          - full
+
+jobs:
+  intent-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    strategy:
+      matrix:
+        python-version: [3.9, 3.10, 3.11]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-asyncio
+    
+    - name: Set up environment variables
+      run: |
+        echo "GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}" >> $GITHUB_ENV
+        echo "HDW_API_TOKEN=${{ secrets.HDW_API_TOKEN }}" >> $GITHUB_ENV
+        echo "EXA_API_KEY=${{ secrets.EXA_API_KEY }}" >> $GITHUB_ENV
+        echo "FIRECRAWL_API_KEY=${{ secrets.FIRECRAWL_API_KEY }}" >> $GITHUB_ENV
+        echo "DATABASE_URL=sqlite:///./test_memory.db" >> $GITHUB_ENV
+    
+    - name: Create required directories
+      run: |
+        mkdir -p logs
+        mkdir -p data
+        mkdir -p cache
+        mkdir -p sessions
+    
+    - name: Run quick intent tests
+      if: ${{ github.event.inputs.test_mode != 'full' }}
+      run: |
+        python -c "
+        import asyncio
+        import sys
+        sys.path.insert(0, '.')
+        from run_intent_tests import run_quick_test
+        
+        async def main():
+            try:
+                accuracy = await run_quick_test()
+                print(f'Quick test accuracy: {accuracy:.1f}%')
+                if accuracy < 80.0:
+                    sys.exit(1)
+            except Exception as e:
+                print(f'Error running quick tests: {e}')
+                sys.exit(1)
+        
+        asyncio.run(main())
+        "
+    
+    - name: Run full intent tests
+      if: ${{ github.event.inputs.test_mode == 'full' }}
+      run: |
+        python -c "
+        import asyncio
+        import sys
+        sys.path.insert(0, '.')
+        from run_intent_tests import run_intent_tests
+        
+        async def main():
+            try:
+                accuracy = await run_intent_tests()
+                print(f'Full test accuracy: {accuracy:.1f}%')
+                if accuracy < 80.0:
+                    sys.exit(1)
+            except Exception as e:
+                print(f'Error running full tests: {e}')
+                sys.exit(1)
+        
+        asyncio.run(main())
+        "
+    
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: intent-test-results-python${{ matrix.python-version }}
+        path: |
+          intent_test_results_*.json
+          logs/
+        retention-days: 30
+    
+    - name: Create test summary
+      if: always()
+      run: |
+        echo "## Intent Understanding Test Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Python Version:** ${{ matrix.python-version }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Test Mode:** ${{ github.event.inputs.test_mode || 'quick' }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ -f intent_test_results_*.json ]; then
+          # Extract key metrics from the latest results file
+          RESULTS_FILE=$(ls -t intent_test_results_*.json | head -n1)
+          
+          # Use Python to extract metrics from JSON
+          python -c "
+        import json
+        import sys
+        
+        try:
+            with open('$RESULTS_FILE', 'r') as f:
+                data = json.load(f)
+            
+            overall = data['overall_stats']
+            print(f'**Overall Accuracy:** {overall[\"accuracy_percentage\"]:.1f}%')
+            print(f'**Total Tests:** {overall[\"total_tests\"]}')
+            print(f'**Successful Tests:** {overall[\"successful_tests\"]}')
+            print(f'**Average Confidence:** {overall[\"avg_confidence\"]:.3f}')
+            print(f'**Average Response Time:** {overall[\"avg_response_time\"]:.3f}s')
+            print()
+            
+            # Top 5 best performing categories
+            categories = data['category_analysis']
+            sorted_cats = sorted(categories.items(), key=lambda x: x[1]['accuracy'], reverse=True)
+            
+            print('**Top Performing Categories:**')
+            for i, (cat, stats) in enumerate(sorted_cats[:5]):
+                print(f'{i+1}. {cat}: {stats[\"accuracy\"]:.1f}% ({stats[\"success\"]}/{stats[\"total\"]})')
+            print()
+            
+            # Worst performing categories
+            worst_cats = sorted(categories.items(), key=lambda x: x[1]['accuracy'])
+            if worst_cats and worst_cats[0][1]['accuracy'] < 80:
+                print('**Categories Needing Attention:**')
+                for cat, stats in worst_cats[:3]:
+                    if stats['accuracy'] < 80:
+                        print(f'- {cat}: {stats[\"accuracy\"]:.1f}% ({stats[\"success\"]}/{stats[\"total\"]})')
+        
+        except Exception as e:
+            print(f'Error parsing results: {e}')
+            sys.exit(1)
+        " >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ No test results file found" >> $GITHUB_STEP_SUMMARY
+        fi
+
+  performance-benchmark:
+    runs-on: ubuntu-latest
+    needs: intent-tests
+    if: github.event_name == 'schedule' || github.event.inputs.test_mode == 'full'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.11
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Set up environment variables
+      run: |
+        echo "GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}" >> $GITHUB_ENV
+        echo "HDW_API_TOKEN=${{ secrets.HDW_API_TOKEN }}" >> $GITHUB_ENV
+        echo "EXA_API_KEY=${{ secrets.EXA_API_KEY }}" >> $GITHUB_ENV
+        echo "FIRECRAWL_API_KEY=${{ secrets.FIRECRAWL_API_KEY }}" >> $GITHUB_ENV
+        echo "DATABASE_URL=sqlite:///./benchmark_memory.db" >> $GITHUB_ENV
+    
+    - name: Create required directories
+      run: |
+        mkdir -p logs data cache sessions
+    
+    - name: Run performance benchmark
+      run: |
+        python -c "
+        import asyncio
+        import time
+        import statistics
+        import sys
+        sys.path.insert(0, '.')
+        from tests.test_intent_understanding_comprehensive import IntentUnderstandingTester
+        from tests.intent_test_data import get_all_test_cases
+        
+        async def benchmark():
+            print('🚀 Running performance benchmark...')
+            
+            tester = IntentUnderstandingTester()
+            await tester.setup_test_conversation()
+            
+            # Run a subset of tests multiple times to measure performance
+            test_cases = get_all_test_cases()[:50]  # First 50 test cases
+            
+            times = []
+            for i in range(3):  # 3 runs
+                print(f'Run {i+1}/3...')
+                start_time = time.time()
+                
+                for test_case in test_cases:
+                    await tester.test_intent_detection(
+                        message=test_case['message'],
+                        expected_intent=test_case['expected'],
+                        category=test_case['category']
+                    )
+                
+                run_time = time.time() - start_time
+                times.append(run_time)
+                print(f'Run {i+1} completed in {run_time:.2f}s')
+            
+            avg_time = statistics.mean(times)
+            min_time = min(times)
+            max_time = max(times)
+            
+            print(f'\\n📊 Performance Benchmark Results:')
+            print(f'Average time: {avg_time:.2f}s')
+            print(f'Min time: {min_time:.2f}s')
+            print(f'Max time: {max_time:.2f}s')
+            print(f'Tests per second: {len(test_cases) / avg_time:.2f}')
+            
+            # Check if performance is acceptable
+            max_acceptable_time = 60.0  # 60 seconds for 50 tests
+            if avg_time > max_acceptable_time:
+                print(f'⚠️ Performance below threshold: {avg_time:.2f}s > {max_acceptable_time}s')
+                sys.exit(1)
+            else:
+                print(f'✅ Performance acceptable: {avg_time:.2f}s <= {max_acceptable_time}s')
+        
+        asyncio.run(benchmark())
+        "
+    
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v3
+      with:
+        name: performance-benchmark
+        path: logs/
+        retention-days: 7

@@ -11,7 +11,7 @@ from .adk_base_agent import ADKAgent
 from models import ICP, ICPCriteria, Conversation, MessageRole
 from utils.config import Config
 from utils.cache import CacheManager
-from integrations import HorizonDataWave, ExaWebsetsAPI, FirecrawlClient
+from integrations import HorizonDataWave, FirecrawlClient
 
 
 class ADKICPAgent(ADKAgent):
@@ -24,12 +24,13 @@ class ADKICPAgent(ADKAgent):
     - Website analysis via Firecrawl
     """
     
-    def __init__(self, config: Config, cache_manager: Optional[CacheManager] = None):
+    def __init__(self, config: Config, cache_manager: Optional[CacheManager] = None, memory_manager=None):
         super().__init__(
             agent_name="icp_agent",
-            agent_description="Creates and refines Ideal Customer Profiles using multi-source research and AI analysis",
+            agent_description="Creates and refines Ideal Customer Profiles using multi-source research and AI analysis. Can retrieve and work with previously created ICPs from memory.",
             config=config,
-            cache_manager=cache_manager
+            cache_manager=cache_manager,
+            memory_manager=memory_manager
         )
         
         # ICP management
@@ -39,6 +40,7 @@ class ADKICPAgent(ADKAgent):
         self._setup_external_clients()
         
         # Setup tools - only add what ICP agent needs
+        self.setup_external_tools()  # This sets up memory tools from parent
         self.setup_icp_specific_tools()
         self.setup_icp_tools()
         
@@ -51,10 +53,7 @@ class ADKICPAgent(ADKAgent):
         except ValueError:
             self.logger.warning("HorizonDataWave client not initialized - API key missing")
         
-        try:
-            self.external_clients["exa"] = ExaWebsetsAPI()
-        except ValueError:
-            self.logger.warning("Exa client not initialized - API key missing")
+        # Exa is not needed for ICP creation - only for prospect finding
         
         try:
             self.external_clients["firecrawl"] = FirecrawlClient(cache_manager=self.cache_manager)
@@ -69,15 +68,10 @@ class ADKICPAgent(ADKAgent):
         # ICP agent needs web scraping for analyzing company websites
         self.setup_web_scraping_tools()
         
-        # ICP agent occasionally uses people search for understanding target roles
-        # But only the basic search, not the expensive nav search
-        self.add_external_tool(
-            name="search_people_exa",
-            description="Search for people using Exa Websets API. Use when looking for contact information, people profiles, or decision makers.",
-            func=self.search_people_exa
-        )
+        # Note: People search (Exa) is not needed for ICP creation
+        # ICP focuses on company criteria and business analysis
         
-        self.logger.info("ICP-specific external tools configured", tool_count=len(self.tools))
+        self.logger.info(f"ICP-specific external tools configured - Tool_Count: {len(self.tools)}")
     
     def setup_icp_tools(self) -> None:
         """Setup ICP-specific tools."""
@@ -88,11 +82,8 @@ class ADKICPAgent(ADKAgent):
             func=self.create_icp_from_research
         )
         
-        self.add_external_tool(
-            name="analyze_company_website",
-            description="Analyze a company website to extract business information for ICP creation. Use when provided with company URLs.",
-            func=self.analyze_company_website
-        )
+        # Note: analyze_company_website is an internal method, not exposed as a tool
+        # to prevent recursive calls when the agent is analyzing websites
         
         self.add_external_tool(
             name="refine_icp_criteria",
@@ -104,6 +95,12 @@ class ADKICPAgent(ADKAgent):
             name="export_icp",
             description="Export ICP in various formats (JSON, structured text). Use when user requests ICP data or other agents need ICP information.",
             func=self.export_icp
+        )
+        
+        self.add_external_tool(
+            name="retrieve_past_icps",
+            description="Search for and retrieve previously created ICPs from memory. Use when user asks about 'last ICP', 'previous ICP', or references past work.",
+            func=self.retrieve_past_icps
         )
     
     async def create_icp_from_research(
@@ -127,7 +124,7 @@ class ADKICPAgent(ADKAgent):
             Dictionary with created ICP data
         """
         try:
-            self.logger.info("Creating ICP from research", companies=len(example_companies or []))
+            self.logger.info(f"Creating ICP from research - Companies: {len(example_companies or [])}")
             
             # Research example companies if provided
             researched_companies = []
@@ -141,7 +138,19 @@ class ADKICPAgent(ADKAgent):
                     if hdw_client:
                         # First search for the company
                         hdw_result = await self.search_companies_hdw(company, limit=1)
-                        if hdw_result["status"] == "success" and hdw_result["companies"]:
+                        
+                        # Handle case where hdw_result might be a string or not properly structured
+                        if not isinstance(hdw_result, dict):
+                            self.logger.warning(f"HDW result is not a dictionary: {type(hdw_result)}")
+                            if isinstance(hdw_result, str):
+                                try:
+                                    hdw_result = json.loads(hdw_result)
+                                except:
+                                    hdw_result = {"status": "error", "error_message": "Invalid HDW result format"}
+                            else:
+                                hdw_result = {"status": "error", "error_message": f"Unexpected HDW result type: {type(hdw_result)}"}
+                        
+                        if hdw_result.get("status") == "success" and hdw_result.get("companies"):
                             researched_companies.extend(hdw_result["companies"])
                             
                             # Get detailed LinkedIn data if in comprehensive mode
@@ -171,15 +180,96 @@ class ADKICPAgent(ADKAgent):
                                 except Exception as e:
                                     self.logger.warning(f"Could not get detailed LinkedIn data for {company}: {e}")
                     
-                    # If it's a URL, scrape the website
+                    # If it's a URL, analyze the website with customer enrichment
                     if company.startswith("http"):
-                        firecrawl_result = await self.scrape_website_firecrawl(company)
-                        if firecrawl_result["status"] == "success":
+                        # Validate URL has proper TLD
+                        import re
+                        url_pattern = re.compile(r'^https?://[^\s/$.?#].[^\s]*\.[a-zA-Z]{2,}')
+                        if not url_pattern.match(company):
+                            self.logger.warning(f"Invalid URL format: {company} - skipping website analysis")
+                            continue
+                        
+                        website_result = await self.analyze_company_website(company, "customers")
+                        
+                        # Handle case where website_result might be a string or not properly structured
+                        if not isinstance(website_result, dict):
+                            self.logger.warning(f"Website analysis result is not a dictionary: {type(website_result)}")
+                            if isinstance(website_result, str):
+                                try:
+                                    website_result = json.loads(website_result)
+                                except:
+                                    website_result = {"status": "error", "error_message": "Invalid website result format"}
+                            else:
+                                website_result = {"status": "error", "error_message": f"Unexpected website result type: {type(website_result)}"}
+                        
+                        if website_result.get("status") == "success":
+                            # Try to extract company name from website analysis
+                            company_name = "Unknown"
+                            try:
+                                if isinstance(website_result["analysis"], str):
+                                    # Parse JSON if it's a string
+                                    if "business_model_and_offerings" in website_result["analysis"]:
+                                        analysis_data = json.loads(website_result["analysis"])
+                                        # Extract company name from offerings/descriptions
+                                        offerings = analysis_data.get("business_model_and_offerings", "")
+                                        # Look for patterns like "Ons.ai" or "Onsa.ai" 
+                                        import re
+                                        name_match = re.search(r'([\w]+\.ai|[\w]+\s+(?:Inc|Corp|LLC|Ltd))', offerings, re.IGNORECASE)
+                                        if name_match:
+                                            company_name = name_match.group(1).replace(".ai", "")
+                            except Exception as e:
+                                self.logger.debug(f"Could not extract company name from website: {e}")
+                            
                             researched_companies.append({
-                                "name": "Unknown",
-                                "website_content": firecrawl_result["content"],
+                                "name": company_name,
+                                "website_analysis": website_result["analysis"],
+                                "enriched_customers": website_result.get("enriched_customers", []),
                                 "url": company
                             })
+                            
+                            # Now try to search HDW with the extracted company name
+                            if hdw_client and company_name != "Unknown":
+                                self.logger.info(f"Searching HDW for company: {company_name}")
+                                hdw_result = await self.search_companies_hdw(company_name, limit=1)
+                                
+                                # Handle case where hdw_result might be a string or not properly structured
+                                if not isinstance(hdw_result, dict):
+                                    self.logger.warning(f"HDW result is not a dictionary: {type(hdw_result)}")
+                                    if isinstance(hdw_result, str):
+                                        try:
+                                            hdw_result = json.loads(hdw_result)
+                                        except:
+                                            hdw_result = {"status": "error", "error_message": "Invalid HDW result format"}
+                                    else:
+                                        hdw_result = {"status": "error", "error_message": f"Unexpected HDW result type: {type(hdw_result)}"}
+                                
+                                if hdw_result.get("status") == "success" and hdw_result.get("companies"):
+                                    # Add HDW data to the researched company
+                                    researched_companies[-1]["hdw_data"] = hdw_result["companies"][0]
+                                    
+                                    # Get detailed LinkedIn data if in standard/comprehensive mode
+                                    if research_depth in ["standard", "comprehensive"]:
+                                        try:
+                                            company_alias = hdw_result["companies"][0].alias
+                                            company_urn = hdw_result["companies"][0].urn.value
+                                            
+                                            try:
+                                                detailed_data = hdw_client.get_linkedin_company(company_alias, timeout=30)
+                                            except:
+                                                detailed_data = hdw_client.get_linkedin_company(company_urn, timeout=30)
+                                            
+                                            if detailed_data:
+                                                detailed_company_data.append({
+                                                    "name": detailed_data[0].name,
+                                                    "industry": detailed_data[0].industry.value if detailed_data[0].industry else "Unknown",
+                                                    "employee_count": detailed_data[0].employee_count,
+                                                    "employee_count_range": detailed_data[0].employee_count_range,
+                                                    "description": detailed_data[0].description or "",
+                                                    "specialities": detailed_data[0].specialities or [],
+                                                    "locations": [loc.location for loc in detailed_data[0].locations] if detailed_data[0].locations else []
+                                                })
+                                        except Exception as e:
+                                            self.logger.warning(f"Could not get detailed LinkedIn data for {company_name}: {e}")
             
             # Save large research data if needed
             if researched_companies or detailed_company_data:
@@ -202,19 +292,20 @@ class ADKICPAgent(ADKAgent):
                     serializable_companies,
                     metadata={"type": "company_research", "count": len(serializable_companies)}
                 )
-                self.logger.info("Saved research data", key=research_key, companies=len(serializable_companies))
+                self.logger.info(f"Saved research data - Key: {research_key}, Companies: {len(serializable_companies)}")
                 
                 # Use summary for prompt
                 companies_summary = f"Found {len(serializable_companies)} companies with detailed data. Examples: {json.dumps(serializable_companies[:3], indent=2, cls=DateTimeEncoder)}"
             else:
                 companies_summary = "None provided"
             
-            # Generate ICP using AI analysis with HDW/Exa compatible criteria
+            # Generate ICP using AI analysis with HDW compatible criteria
             icp_prompt = f"""
             You are generating an ICP JSON structure. DO NOT call any functions.
             Simply analyze the information and return the JSON structure as requested.
             
             IMPORTANT: Return ONLY the JSON, no function calls, no additional text.
+            IMPORTANT: Limit pain_points to EXACTLY 3 most important items.
             Create an Ideal Customer Profile based on the following information:
             
             Business Information:
@@ -223,7 +314,9 @@ class ADKICPAgent(ADKAgent):
             Researched Companies:
             {companies_summary}
             
-            Create a comprehensive ICP with criteria that match HDW and Exa search capabilities:
+            Pay special attention to any enriched customer data found, as this represents actual customers of the business.
+            
+            Create a comprehensive ICP with criteria that match HDW search capabilities:
             
             IMPORTANT: Use these specific values for compatibility with our search APIs:
             
@@ -280,7 +373,7 @@ class ADKICPAgent(ADKAgent):
                 }},
                 "industries": ["Software Development", "SaaS"],
                 "target_roles": ["VP Sales", "Head of Sales", "Sales Director"],
-                "pain_points": ["pain1", "pain2"],
+                "pain_points": ["pain1", "pain2", "pain3"],  // LIMIT TO EXACTLY 3
                 "buying_signals": ["signal1", "signal2"]
             }}
             """
@@ -302,7 +395,7 @@ class ADKICPAgent(ADKAgent):
             # Store the ICP
             self.active_icps[icp.id] = icp
             
-            self.logger.info("ICP created from research", icp_id=icp.id, name=icp.name)
+            self.logger.info(f"ICP created from research - Icp_Id: {icp.id}, Name: {icp.name}")
             
             return {
                 "status": "success",
@@ -313,7 +406,7 @@ class ADKICPAgent(ADKAgent):
             }
             
         except Exception as e:
-            self.logger.error("Error creating ICP from research", error=str(e))
+            self.logger.error(f"Error creating ICP from research - Error: {str(e)}")
             return {"status": "error", "error_message": str(e)}
     
     async def analyze_company_website(
@@ -334,7 +427,18 @@ class ADKICPAgent(ADKAgent):
             # Scrape the website
             scrape_result = await self.scrape_website_firecrawl(url, include_links=True)
             
-            if scrape_result["status"] != "success":
+            # Handle case where scrape_result might be a string or not properly structured
+            if not isinstance(scrape_result, dict):
+                self.logger.warning(f"Scrape result is not a dictionary: {type(scrape_result)}")
+                if isinstance(scrape_result, str):
+                    try:
+                        scrape_result = json.loads(scrape_result)
+                    except:
+                        scrape_result = {"status": "error", "error_message": "Invalid scrape result format"}
+                else:
+                    scrape_result = {"status": "error", "error_message": f"Unexpected scrape result type: {type(scrape_result)}"}
+            
+            if scrape_result.get("status") != "success":
                 return scrape_result
             
             # Analyze the content
@@ -353,21 +457,80 @@ class ADKICPAgent(ADKAgent):
             4. Technology stack mentions
             5. Customer types mentioned
             6. Pain points they solve
+            7. IMPORTANT: List any specific customer companies mentioned (e.g., "Our customers include Microsoft, Amazon...")
             
-            Return as structured JSON with insights for ICP creation.
+            Return as structured JSON with insights for ICP creation. Include a "mentioned_customers" field with any customer company names found.
             """
             
-            analysis = await self.process_message(analysis_prompt)
+            # Use process_json_request to prevent recursive function calls
+            analysis = await self.process_json_request(analysis_prompt)
+            
+            # Try to parse the analysis to extract mentioned customers
+            enriched_customers = []
+            try:
+                # Try to parse JSON response
+                import json
+                if isinstance(analysis, str):
+                    # Clean up markdown formatting if present
+                    if "```json" in analysis:
+                        analysis = analysis[analysis.find("```json")+7:analysis.rfind("```")]
+                    elif "```" in analysis:
+                        analysis = analysis[analysis.find("```")+3:analysis.rfind("```")]
+                    analysis_data = json.loads(analysis)
+                else:
+                    analysis_data = analysis
+                
+                # Extract mentioned customers
+                mentioned_customers = analysis_data.get("mentioned_customers", [])
+                
+                # Enrich customer data using HDW if available
+                if mentioned_customers and "horizondatawave" in self.external_clients:
+                    self.logger.info(f"Found {len(mentioned_customers)} customer companies to enrich")
+                    
+                    for customer_name in mentioned_customers[:5]:  # Limit to 5 for efficiency
+                        if customer_name and isinstance(customer_name, str):  # Ensure valid customer name
+                            hdw_result = await self.search_companies_hdw(query=customer_name, limit=1)
+                            
+                            # Handle case where hdw_result might be a string or not properly structured
+                            if not isinstance(hdw_result, dict):
+                                self.logger.warning(f"HDW result is not a dictionary: {type(hdw_result)}")
+                                if isinstance(hdw_result, str):
+                                    try:
+                                        hdw_result = json.loads(hdw_result)
+                                    except:
+                                        hdw_result = {"status": "error", "error_message": "Invalid HDW result format"}
+                                else:
+                                    hdw_result = {"status": "error", "error_message": f"Unexpected HDW result type: {type(hdw_result)}"}
+                            
+                            if hdw_result.get("status") == "success" and hdw_result.get("companies"):
+                                company_data = hdw_result["companies"][0]
+                                enriched_customers.append({
+                                    "name": getattr(company_data, "name", customer_name),
+                                    "industry": getattr(company_data, "industry", "Unknown"),
+                                    "company_size": getattr(company_data, "company_size", "Unknown"),
+                                    "linkedin_url": getattr(company_data, "linkedin_url", ""),
+                                    "description": getattr(company_data, "description", "")
+                                })
+                    
+                    if enriched_customers:
+                        # Add enriched data back to analysis
+                        if isinstance(analysis_data, dict):
+                            analysis_data["enriched_customers"] = enriched_customers
+                            analysis = json.dumps(analysis_data, indent=2)
+                        
+            except Exception as e:
+                self.logger.warning(f"Could not parse/enrich customer data: {e}")
             
             return {
                 "status": "success",
                 "url": url,
                 "analysis": analysis,
+                "enriched_customers": enriched_customers,
                 "raw_content": scrape_result["content"][:1000]
             }
             
         except Exception as e:
-            self.logger.error("Error analyzing website", url=url, error=str(e))
+            self.logger.error(f"Error analyzing website - Url: {url}, Error: {str(e)}")
             return {"status": "error", "error_message": str(e)}
     
     async def refine_icp_criteria(
@@ -392,7 +555,7 @@ class ADKICPAgent(ADKAgent):
             Dictionary with refined ICP data
         """
         try:
-            self.logger.info("Starting ICP refinement", icp_id=icp_id, feedback_length=len(feedback))
+            self.logger.info(f"Starting ICP refinement - Icp_Id: {icp_id}, Feedback_Length: {len(feedback)}")
             
             # Get existing ICP
             existing_icp = self.active_icps.get(icp_id)
@@ -458,7 +621,7 @@ class ADKICPAgent(ADKAgent):
             # Store the refined ICP
             self.active_icps[refined_icp.id] = refined_icp
             
-            self.logger.info("ICP refinement completed successfully", original_id=icp_id, refined_id=refined_icp.id)
+            self.logger.info(f"ICP refinement completed successfully - Original_Id: {icp_id}, Refined_Id: {refined_icp.id}")
             
             return {
                 "status": "success",
@@ -468,7 +631,7 @@ class ADKICPAgent(ADKAgent):
             }
             
         except Exception as e:
-            self.logger.error("Error refining ICP", icp_id=icp_id, error=str(e))
+            self.logger.error(f"Error refining ICP - Icp_Id: {icp_id}, Error: {str(e)}")
             return {"status": "error", "error_message": str(e)}
     
     async def export_icp(
@@ -514,7 +677,7 @@ class ADKICPAgent(ADKAgent):
                 return {"status": "error", "error_message": f"Unsupported format: {format}"}
                 
         except Exception as e:
-            self.logger.error("Error exporting ICP", icp_id=icp_id, error=str(e))
+            self.logger.error(f"Error exporting ICP - Icp_Id: {icp_id}, Error: {str(e)}")
             return {"status": "error", "error_message": str(e)}
     
     def _create_icp_from_data(self, icp_data: Dict[str, Any]) -> ICP:
@@ -609,19 +772,69 @@ class ADKICPAgent(ADKAgent):
         """Create brief ICP summary."""
         return f"{icp.name}: Targeting {', '.join(icp.industries)} companies with {', '.join(icp.target_roles)} decision makers."
     
+    async def retrieve_past_icps(
+        self,
+        query: Optional[str] = None,
+        limit: int = 5
+    ) -> Dict[str, Any]:
+        """Retrieve previously created ICPs from memory.
+        
+        Args:
+            query: Search query (e.g., "last ICP", "B2B SaaS ICP")
+            limit: Maximum number of ICPs to retrieve
+            
+        Returns:
+            Dictionary with retrieved ICPs
+        """
+        try:
+            if not query:
+                query = "ICP ideal customer profile created"
+            
+            self.logger.info(f"Searching for past ICPs with query: {query}")
+            
+            # First check active ICPs in memory
+            active_icps = []
+            for icp_id, icp in self.active_icps.items():
+                active_icps.append({
+                    "id": icp_id,
+                    "name": icp.name,
+                    "summary": self._create_icp_summary(icp),
+                    "icp": icp.model_dump()
+                })
+            
+            if active_icps:
+                self.logger.info(f"Found {len(active_icps)} active ICPs in memory")
+                return {
+                    "status": "success",
+                    "source": "active_memory",
+                    "icps": active_icps[:limit],
+                    "message": f"Found {len(active_icps)} ICPs in active memory"
+                }
+            
+            # If no active ICPs, prompt to use load_memory tool
+            return {
+                "status": "success",
+                "source": "none",
+                "icps": [],
+                "message": "No active ICPs found. Please use the load_memory tool to search for ICPs from previous sessions.",
+                "suggestion": "Try using: load_memory('ICP') or load_memory('ideal customer profile')"
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error retrieving past ICPs - Error: {str(e)}")
+            return {"status": "error", "error_message": str(e)}
+    
     # Required abstract method implementations
     
     def get_capabilities(self) -> List[str]:
         """Return list of ICP agent capabilities."""
         return [
             "create_icp_from_research",
-            "analyze_company_website", 
             "refine_icp_criteria",
             "export_icp",
             "search_companies_hdw",
             "search_industries_hdw",
             "search_locations_hdw",
-            "search_people_exa",
             "scrape_website_firecrawl"
         ]
     

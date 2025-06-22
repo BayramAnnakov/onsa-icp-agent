@@ -55,6 +55,42 @@ class StorageConfig(BaseModel):
     conversations_file: str = "./data/conversations.json"
 
 
+class VertexAIConfig(BaseModel):
+    """VertexAI configuration for memory and session services."""
+    project_id: str = Field(default_factory=lambda: os.getenv('GOOGLE_CLOUD_PROJECT', 'bayram-adk-hack'))
+    location: str = Field(default_factory=lambda: os.getenv('GOOGLE_CLOUD_LOCATION', 'us-central1'))
+    
+    # RAG Corpus configuration
+    rag_corpus_id: Optional[str] = Field(None, description="Existing RAG corpus ID")
+    rag_corpus_name: str = Field(default="adk-agent-memory", description="RAG corpus name")
+    rag_corpus_description: str = Field(default="ADK agent system memory storage", description="RAG corpus description")
+    
+    # Reasoning Engine configuration
+    reasoning_engine_id: Optional[str] = Field(default_factory=lambda: os.getenv('REASONING_ENGINE_ID', None))
+    reasoning_engine_app_name: Optional[str] = Field(
+        default_factory=lambda: os.getenv('REASONING_ENGINE_APP_NAME', None) or 
+        (f"projects/{os.getenv('GOOGLE_CLOUD_PROJECT', 'bayram-adk-hack')}/locations/{os.getenv('GOOGLE_CLOUD_LOCATION', 'us-central1')}/reasoningEngines/{os.getenv('REASONING_ENGINE_ID')}" 
+         if os.getenv('REASONING_ENGINE_ID') else None)
+    )
+    
+    # Session storage configuration
+    session_bucket_name: str = Field(default_factory=lambda: f"{os.getenv('GOOGLE_CLOUD_PROJECT', 'bayram-adk-hack')}-adk-sessions")
+    session_prefix: str = Field(default="sessions/", description="Prefix for session objects in GCS")
+    
+    # Memory service configuration
+    memory_chunk_size: int = Field(default=1000, description="Max size for memory chunks")
+    memory_overlap: int = Field(default=200, description="Overlap between memory chunks")
+    similarity_top_k: int = Field(default=5, description="Number of similar memories to retrieve")
+    
+    # Database configuration for local persistence
+    use_database: bool = Field(default_factory=lambda: os.getenv('USE_DATABASE_MEMORY', 'false').lower() == 'true')
+    database_url: str = Field(default_factory=lambda: os.getenv('DATABASE_URL', 'sqlite:///./data/adk_agent_memory.db'))
+    
+    # Cloud Run specific
+    use_default_credentials: bool = Field(default=True, description="Use ADC in Cloud Run")
+    enabled: bool = Field(default_factory=lambda: os.getenv('VERTEX_AI_ENABLED', 'false').lower() == 'true')
+
+
 class Config(BaseModel):
     """Main configuration class."""
     
@@ -65,10 +101,14 @@ class Config(BaseModel):
     cache: CacheConfig = Field(default_factory=CacheConfig)
     scoring: ScoringConfig = Field(default_factory=ScoringConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
+    vertexai: VertexAIConfig = Field(default_factory=VertexAIConfig)
     
     @classmethod
     def load_from_file(cls, config_path: str = "config.yaml") -> "Config":
-        """Load configuration from YAML file."""
+        """Load configuration from YAML file with environment variable substitution."""
+        from dotenv import load_dotenv
+        load_dotenv()  # Load environment variables
+        
         config_file = Path(config_path)
         
         if not config_file.exists():
@@ -76,7 +116,16 @@ class Config(BaseModel):
             return cls()
         
         with open(config_file, 'r') as f:
-            config_data = yaml.safe_load(f)
+            config_content = f.read()
+        
+        # Simple environment variable substitution
+        import re
+        def replace_env_vars(match):
+            env_var = match.group(1)
+            return os.getenv(env_var, match.group(0))
+        
+        config_content = re.sub(r'\$\{([^}]+)\}', replace_env_vars, config_content)
+        config_data = yaml.safe_load(config_content)
         
         return cls.model_validate(config_data)
     
