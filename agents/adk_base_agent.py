@@ -27,6 +27,12 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from services.vertex_memory_service import VertexMemoryManager
 
+# Import A2A protocol support
+from protocols.a2a_protocol import (
+    A2ACapability, A2AAgentInfo, A2AMessage, A2ATaskRequest,
+    A2ATaskResponse, A2AProtocolHandler, A2AMessageType
+)
+
 
 class AgentMessage(BaseModel):
     """Message structure for agent communication."""
@@ -98,6 +104,11 @@ class ADKAgent(ABC):
         # Initialize the Google ADK Agent
         self.adk_agent = None
         self.runner = None
+        
+        # A2A Protocol support
+        self.a2a_info = None
+        self.a2a_handler = None
+        self._init_a2a_protocol()
         
         # Memory-aware instruction
         self.memory_aware_instruction = self._create_memory_aware_instruction()
@@ -1416,6 +1427,176 @@ Always check memory first when the user references past work or asks about previ
                 "status": "error",
                 "error": str(e)
             }
+    
+    # A2A Protocol methods
+    
+    def _init_a2a_protocol(self):
+        """Initialize A2A protocol support."""
+        # This will be called after subclass initialization
+        # when capabilities are defined
+        pass
+    
+    def _create_a2a_info(self) -> A2AAgentInfo:
+        """Create A2A agent information from current agent configuration."""
+        capabilities = []
+        
+        # Convert tools to A2A capabilities
+        for tool in self.tools:
+            if hasattr(tool, 'func'):
+                func = tool.func
+                capability = A2ACapability(
+                    name=func.__name__,
+                    description=func.__doc__ or f"Execute {func.__name__}",
+                    input_schema=self._get_function_schema(func),
+                    output_schema={
+                        "type": "object",
+                        "properties": {
+                            "status": {"type": "string"},
+                            "result": {"type": "object"}
+                        }
+                    },
+                    async_execution=asyncio.iscoroutinefunction(func)
+                )
+                capabilities.append(capability)
+        
+        return A2AAgentInfo(
+            agent_id=self.agent_id,
+            name=self.agent_name,
+            description=self.agent_description,
+            version="1.0.0",
+            capabilities=capabilities,
+            metadata={
+                "adk_version": "1.3.0",
+                "supports_memory": bool(self.memory_manager)
+            }
+        )
+    
+    def _get_function_schema(self, func: Callable) -> Dict[str, Any]:
+        """Extract function parameter schema from function signature."""
+        import inspect
+        
+        sig = inspect.signature(func)
+        properties = {}
+        required = []
+        
+        for param_name, param in sig.parameters.items():
+            if param_name == 'self':
+                continue
+                
+            param_type = "string"  # Default type
+            if param.annotation != inspect.Parameter.empty:
+                # Try to infer type from annotation
+                if param.annotation == int:
+                    param_type = "integer"
+                elif param.annotation == float:
+                    param_type = "number"
+                elif param.annotation == bool:
+                    param_type = "boolean"
+                elif param.annotation == list or param.annotation == List:
+                    param_type = "array"
+                elif param.annotation == dict or param.annotation == Dict:
+                    param_type = "object"
+            
+            properties[param_name] = {"type": param_type}
+            
+            if param.default == inspect.Parameter.empty:
+                required.append(param_name)
+        
+        return {
+            "type": "object",
+            "properties": properties,
+            "required": required
+        }
+    
+    def get_a2a_capabilities(self) -> List[A2ACapability]:
+        """Get agent capabilities in A2A format."""
+        if not self.a2a_info:
+            self.a2a_info = self._create_a2a_info()
+        return self.a2a_info.capabilities
+    
+    async def handle_a2a_request(
+        self,
+        capability_name: str,
+        parameters: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Handle an A2A protocol request.
+        
+        Args:
+            capability_name: Name of the capability to execute
+            parameters: Parameters for the capability
+            
+        Returns:
+            Dictionary with status and result/error
+        """
+        try:
+            # Validate capability exists
+            if capability_name not in self.get_capabilities():
+                return {
+                    "status": "error",
+                    "error": f"Capability '{capability_name}' not found"
+                }
+            
+            # Find and execute the tool function
+            for tool in self.tools:
+                if hasattr(tool, 'func') and tool.func.__name__ == capability_name:
+                    # Execute the function
+                    result = await tool.func(**parameters)
+                    
+                    return {
+                        "status": "success",
+                        "result": result
+                    }
+            
+            # If we get here, the capability wasn't found in tools
+            return {
+                "status": "error",
+                "error": f"Tool function for '{capability_name}' not found"
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error handling A2A request - Capability: {capability_name}, Error: {str(e)}")
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+    
+    async def handle_a2a_message(self, message: A2AMessage) -> Optional[A2AMessage]:
+        """Handle an A2A protocol message."""
+        if not self.a2a_handler:
+            if not self.a2a_info:
+                self.a2a_info = self._create_a2a_info()
+            self.a2a_handler = A2AProtocolHandler(self.a2a_info)
+        
+        # Handle standard protocol messages
+        if message.message_type in [A2AMessageType.PING, A2AMessageType.GET_CAPABILITIES, A2AMessageType.DISCOVER_AGENTS]:
+            return await self.a2a_handler.handle_message(message)
+        
+        # Handle task execution
+        if message.message_type == A2AMessageType.EXECUTE_TASK:
+            task_request = A2ATaskRequest(**message.payload)
+            result = await self.handle_a2a_request(
+                task_request.capability_name,
+                task_request.parameters
+            )
+            
+            # Create response
+            task_response = A2ATaskResponse(
+                task_id=task_request.task_id,
+                status="completed" if result["status"] == "success" else "failed",
+                result=result.get("result"),
+                error=result.get("error"),
+                completed_at=datetime.utcnow()
+            )
+            
+            return A2AMessage(
+                message_type=A2AMessageType.TASK_RESPONSE,
+                sender_id=self.agent_id,
+                recipient_id=message.sender_id,
+                correlation_id=message.message_id,
+                payload=task_response.dict()
+            )
+        
+        return None
     
     # Abstract methods for subclasses
     

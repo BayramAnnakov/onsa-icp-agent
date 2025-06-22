@@ -10,6 +10,9 @@ fastapi>=0.104.0
 uvicorn>=0.24.0
 pydantic>=2.5.0
 
+# Google A2A Protocol
+a2a-sdk>=0.1.0
+
 # External API integrations
 requests>=2.31.0
 requests-cache>=1.1.0

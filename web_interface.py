@@ -249,10 +249,22 @@ class WebInterface:
                                 if prospects:
                                     self.current_prospects = prospects
                                     table_data = self._format_prospects_for_dataframe(prospects)
+                                    
+                                    # Add prospect table summary to chat
+                                    table_summary = f"\n\n📊 **Found {len(prospects)} prospects - see table below for details**"
+                                    if table_summary not in full_response:
+                                        full_response += table_summary
+                                        history[-1] = (message, full_response)
+                                    
                                     yield history, self._get_conversation_status(), table_data, True
                                     continue
                     
-                    yield history, self._get_conversation_status(), [], False
+                    # Keep table visible if we have prospects
+                    if self.current_prospects and status.get('current_step') in ['prospect_review', 'final_approval']:
+                        table_data = self._format_prospects_for_dataframe(self.current_prospects)
+                        yield history, self._get_conversation_status(), table_data, True
+                    else:
+                        yield history, self._get_conversation_status(), [], False
             else:
                 # Direct agent interaction (non-streaming for now)
                 response = await self._process_direct_agent_message(
@@ -295,15 +307,19 @@ class WebInterface:
         # Sort prospects by total_score in descending order
         sorted_prospects = sorted(prospects, key=lambda p: p.get('score', {}).get('total_score', 0), reverse=True)
         
-        for prospect in sorted_prospects[:10]:  # Limit to top 10
+        for i, prospect in enumerate(sorted_prospects[:10], 1):  # Limit to top 10 with rank
             company = prospect.get('company', {})
             person = prospect.get('person', {})
             score_data = prospect.get('score', {})
+            
+            # Add rank
+            rank = f"#{i}"
             
             # Format name with LinkedIn link
             first_name = person.get('first_name', 'Unknown')
             last_name = person.get('last_name', '')
             person_name = f"{first_name} {last_name}".strip()
+            title = person.get('title', 'N/A')
             linkedin_url = person.get('linkedin_url', '')
             
             if linkedin_url and linkedin_url != 'Not available':
@@ -312,8 +328,12 @@ class WebInterface:
             else:
                 name_display = person_name
             
+            # Combine name and title
+            name_title_display = f"{name_display}<br/><small style='color: #666;'>{title}</small>"
+            
             # Format company with LinkedIn link
             company_name = company.get('name') or 'N/A'
+            company_size = company.get('size', 'N/A')
             company_linkedin = company.get('linkedin_url', '')
             
             if company_linkedin and company_linkedin != 'Not available':
@@ -321,6 +341,9 @@ class WebInterface:
                 company_display = f'<a href="{company_linkedin}" target="_blank" style="color: #0066cc; text-decoration: none;">{company_name}</a>'
             else:
                 company_display = company_name
+            
+            # Add company size
+            company_full_display = f"{company_display}<br/><small style='color: #666;'>{company_size}</small>"
             
             # Format score with emoji (already in 0-1 scale from scoring)
             total_score = score_data.get('total_score', 0)
@@ -340,7 +363,7 @@ class WebInterface:
             if len(reasoning) > 150:
                 reasoning = reasoning[:147] + "..."
             
-            data.append([name_display, company_display, score_display, reasoning])
+            data.append([rank, name_title_display, company_full_display, score_display, reasoning])
         
         return data
     
@@ -450,7 +473,38 @@ def create_interface(web_interface=None, deployment_mode="local"):
     .gradio-container {
         max-width: 1200px !important;
     }
-    """ if deployment_mode == "cloud_run" else ""
+    #prospect-table {
+        margin-top: 20px;
+        margin-bottom: 20px;
+    }
+    #prospect-table table {
+        width: 100%;
+    }
+    #prospect-table td {
+        vertical-align: top;
+        padding: 10px;
+    }
+    #prospect-table td:first-child {
+        text-align: center;
+        font-weight: bold;
+    }
+    """ if deployment_mode == "cloud_run" else """
+    #prospect-table {
+        margin-top: 20px;
+        margin-bottom: 20px;
+    }
+    #prospect-table table {
+        width: 100%;
+    }
+    #prospect-table td {
+        vertical-align: top;
+        padding: 10px;
+    }
+    #prospect-table td:first-child {
+        text-align: center;
+        font-weight: bold;
+    }
+    """
     
     with gr.Blocks(
         title="ADK Multi-Agent Sales System", 
@@ -483,14 +537,15 @@ def create_interface(web_interface=None, deployment_mode="local"):
                 
                 # Prospect DataFrame (initially hidden)
                 prospect_table = gr.DataFrame(
-                    headers=["Name", "Company", "Score", "Reasoning"],
-                    datatype=["html", "html", "markdown", "str"],
+                    headers=["Rank", "Name & Title", "Company & Size", "Score", "Why They Match"],
+                    datatype=["str", "html", "html", "markdown", "str"],
                     interactive=False,
                     visible=False,
-                    label="🏆 Top Prospects",
+                    label="🏆 Top Prospects - Click names to view LinkedIn profiles",
                     wrap=True,
                     row_count=(10, "fixed"),
-                    col_count=(4, "fixed")
+                    col_count=(5, "fixed"),
+                    elem_id="prospect-table"
                 )
                 
                 with gr.Row():
