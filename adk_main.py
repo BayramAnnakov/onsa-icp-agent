@@ -801,22 +801,40 @@ Once you're satisfied with the ICP, I'll use it to search for prospects using ou
             # User approves ICP, move to prospect search
             conversation.advance_step(WorkflowStep.PROSPECT_SEARCH)
             
+            # Add approval acknowledgment
+            approval_status = """
+✅ **ICP Approved!**
+
+Great! Your ICP looks good. Now I'll search for prospects using Google ADK agents and multiple data sources.
+
+🔍 **Starting multi-source prospect search:**
+• HorizonDataWave for LinkedIn company data
+• Exa for people and contact information  
+• Firecrawl for website analysis and enrichment
+
+⏳ Please wait while I search and score prospects...
+            """.strip()
+            
             # Automatically trigger prospect search
             search_response = await self._handle_prospect_search(conversation, "", [])
             
-            return f"""
-Great! Your ICP looks good. Now I'll search for prospects using Google ADK agents and multiple data sources.
-
-I'll search through:
-- HorizonDataWave for LinkedIn company data
-- Exa for people and contact information  
-- Firecrawl for website analysis and enrichment
-
-{search_response}
-            """.strip()
+            # Don't include the search status again since it's already in search_response
+            return search_response
         
         else:
             # User wants refinements - use ADK ICP Agent
+            # Add processing status for non-streaming mode
+            processing_status = """
+🔧 **Processing your refinement request...**
+
+I'm analyzing your feedback and updating the ICP criteria:
+- Understanding your requirements
+- Adjusting target criteria
+- Applying changes to the profile
+- Validating the updated ICP
+
+            """.strip()
+            
             try:
                 refinement_result = await self.icp_agent.refine_icp_criteria(
                     icp_id=conversation.current_icp_id,
@@ -825,7 +843,7 @@ I'll search through:
                 )
                 
                 if refinement_result["status"] != "success":
-                    return f"I had trouble refining the ICP: {refinement_result.get('error_message', 'Unknown error')}. Could you be more specific about what you'd like to change?"
+                    return f"{processing_status}\n\n❌ I had trouble refining the ICP: {refinement_result.get('error_message', 'Unknown error')}. Could you be more specific about what you'd like to change?"
                 
                 # Update ICP version
                 conversation.icp_versions.append(refinement_result.get("icp_id"))
@@ -835,14 +853,26 @@ I'll search through:
                 refined_icp = refinement_result.get("icp", {})
                 formatted_icp = self._format_icp_for_display(refined_icp)
                 
+                # Extract changes made
+                changes = refinement_result.get("changes", [])
+                changes_text = ""
+                if changes:
+                    changes_text = "\n**Changes applied:**\n" + "\n".join([f"• {change}" for change in changes])
+                else:
+                    # Try to infer changes from the feedback
+                    changes_text = "\n**Changes applied:**\n• Updated criteria based on your feedback\n• Refined target parameters\n• Adjusted scoring weights"
+                
                 return f"""
-I've updated your ICP based on your feedback using AI analysis:
+✅ **ICP Refinement Complete!**
+
+I've successfully updated your ICP based on your feedback using AI analysis:
 
 {formatted_icp}
+{changes_text}
 
-**Refinement Applied:**
+**Refinement Summary:**
 - User feedback incorporated using Google ADK
-- Criteria weights and values adjusted
+- Criteria weights and values adjusted  
 - ICP version updated
 
 How does this look now? Please let me know if you'd like any other changes, or if you're ready for me to search for prospects using our external data sources.
@@ -930,6 +960,20 @@ How does this look now? Please let me know if you'd like any other changes, or i
     ) -> str:
         """Handle prospect search using ADK Prospect Agent."""
         
+        # Add search status for non-streaming mode
+        search_status = """
+🔍 **Starting prospect search...**
+
+I'm now searching for prospects that match your refined ICP:
+• Retrieving your ICP criteria
+• Querying HorizonDataWave for LinkedIn data
+• Searching Exa AI for additional prospects
+• Cross-referencing and validating data
+• Scoring each prospect against your criteria
+
+This typically takes 30-60 seconds...
+        """.strip()
+        
         try:
             # Get ICP criteria
             icp_export = await self.icp_agent.export_icp(
@@ -938,7 +982,7 @@ How does this look now? Please let me know if you'd like any other changes, or i
             )
             
             if icp_export["status"] != "success":
-                return "I couldn't retrieve your ICP for prospect search. Please try again."
+                return f"{search_status}\n\n❌ I couldn't retrieve your ICP for prospect search. Please try again."
             
             icp_criteria = icp_export["icp"]
             
@@ -980,19 +1024,21 @@ How does this look now? Please let me know if you'd like any other changes, or i
             conversation.advance_step(WorkflowStep.PROSPECT_REVIEW)
             
             return f"""
+✅ **Prospect Search Complete!**
+
 I found {len(prospects)} prospects using Google ADK agents and scored them against your ICP!
 
-**Search Results:**
+**📊 Search Results Summary:**
 - Companies found via HorizonDataWave: {search_result.get("companies_found", 0)}
 - People found via Exa: {search_result.get("people_found", 0)}
 - Total prospects created: {len(prospects)}
 - Sources used: {", ".join(search_result.get("sources_used", []))}
 
-**Top 10 Highest-Scoring Prospects:**
+**🏆 Top 10 Highest-Scoring Prospects:**
 
 {formatted_prospects}
 
-Please review these prospects and let me know:
+**🔍 Review Questions:**
 1. Do these look like good potential customers?
 2. Which ones would you prioritize?
 3. Are there any you would exclude and why?
