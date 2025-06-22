@@ -134,7 +134,7 @@ def create_gradio_app():
                         await web_interface.start_new_conversation()
                     
                     # Stream responses using the new streaming method
-                    async for updated_history, status in web_interface.process_message_stream(
+                    async for updated_history, status, table_data, table_visible in web_interface.process_message_stream(
                         message=message,
                         history=history,
                         agent_type="Main Workflow",  # Use main workflow for full system
