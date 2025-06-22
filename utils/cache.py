@@ -27,7 +27,7 @@ class CacheManager:
         Path(config.directory).mkdir(parents=True, exist_ok=True)
         
         # Initialize disk cache
-        self.cache = dc.Cache(
+        self._cache = dc.Cache(
             directory=config.directory,
             size_limit=self._parse_size(config.max_size)
         )
@@ -67,7 +67,7 @@ class CacheManager:
         cache_key = self._generate_key(key, namespace)
         
         try:
-            cached_item = self.cache.get(cache_key)
+            cached_item = self._cache.get(cache_key)
             
             if cached_item is None:
                 return None
@@ -81,7 +81,7 @@ class CacheManager:
             if 'expires_at' in cached_item:
                 expires_at = datetime.fromisoformat(cached_item['expires_at'])
                 if datetime.now() > expires_at:
-                    self.cache.delete(cache_key)
+                    self._cache.delete(cache_key)
                     self.logger.debug("Cache item expired", key=cache_key)
                     return None
             
@@ -110,7 +110,7 @@ class CacheManager:
                 'expires_at': (datetime.now() + timedelta(seconds=ttl)).isoformat()
             }
             
-            self.cache.set(cache_key, cached_item)
+            self._cache.set(cache_key, cached_item)
             self.logger.debug("Cache set", key=cache_key, ttl=ttl)
             return True
             
@@ -123,7 +123,7 @@ class CacheManager:
         cache_key = self._generate_key(key, namespace)
         
         try:
-            result = self.cache.delete(cache_key)
+            result = self._cache.delete(cache_key)
             self.logger.debug("Cache delete", key=cache_key, found=result)
             return result
             
@@ -137,9 +137,9 @@ class CacheManager:
         prefix = f"{namespace}:"
         
         try:
-            for key in list(self.cache):
+            for key in list(self._cache):
                 if key.startswith(prefix):
-                    self.cache.delete(key)
+                    self._cache.delete(key)
                     count += 1
             
             self.logger.info("Cleared cache namespace", namespace=namespace, count=count)
@@ -152,7 +152,7 @@ class CacheManager:
     def clear_all(self) -> bool:
         """Clear all cache items."""
         try:
-            self.cache.clear()
+            self._cache.clear()
             self.logger.info("Cleared all cache")
             return True
             
@@ -164,11 +164,11 @@ class CacheManager:
         """Get cache statistics."""
         try:
             return {
-                'size': len(self.cache),
-                'volume': self.cache.volume(),
-                'directory': str(self.cache.directory),
-                'hit_count': getattr(self.cache, 'hit_count', 0),
-                'miss_count': getattr(self.cache, 'miss_count', 0)
+                'size': len(self._cache),
+                'volume': self._cache.volume(),
+                'directory': str(self._cache.directory),
+                'hit_count': getattr(self._cache, 'hit_count', 0),
+                'miss_count': getattr(self._cache, 'miss_count', 0)
             }
         except Exception as e:
             self.logger.error("Error getting cache stats", error=str(e))

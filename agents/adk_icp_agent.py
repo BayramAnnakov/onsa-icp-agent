@@ -400,7 +400,19 @@ class ADKICPAgent(ADKAgent):
             return {
                 "status": "success",
                 "icp_id": icp.id,
-                "icp": icp.model_dump(),
+                "icp": {
+                    "id": icp.id,
+                    "name": icp.name,
+                    "description": icp.description,
+                    "industries": icp.industries,
+                    "target_roles": icp.target_roles,
+                    "seniority_levels": icp.seniority_levels,
+                    "departments": icp.departments,
+                    "pain_points": icp.pain_points,
+                    "goals": icp.goals,
+                    "company_size": icp.company_size,
+                    "geographic_regions": icp.geographic_regions
+                },
                 "research_used": len(researched_companies),
                 "detailed_research": len(detailed_company_data)
             }
