@@ -1672,7 +1672,43 @@ Is there anything else I can help you with today?
         except Exception as e:
             self.logger.warning(f"Failed to analyze intent, using fallback: {e}")
             
-            # Enhanced fallback intent detection with semantic understanding
+            # Simple keyword fallback for common intents
+            message_lower = message.lower().strip()
+            
+            # Check for greetings first
+            greeting_words = ["hi", "hello", "hey", "greetings", "good morning", "good afternoon", "good evening", "howdy"]
+            if any(greeting in message_lower.split() for greeting in greeting_words) or message_lower in greeting_words:
+                return {
+                    "intent_type": "casual_greeting",
+                    "confidence": 0.9,
+                    "reasoning": "Detected greeting keyword",
+                    "suggested_action": "respond_friendly",
+                    "advance_workflow": False
+                }
+            
+            # Check for ICP creation requests
+            icp_phrases = ["create icp", "build icp", "make icp", "create an icp", "let's create", "lets create"]
+            if any(phrase in message_lower for phrase in icp_phrases):
+                return {
+                    "intent_type": "request_icp_creation",
+                    "confidence": 0.8,
+                    "reasoning": "Detected ICP creation request",
+                    "suggested_action": "create_icp",
+                    "advance_workflow": True
+                }
+            
+            # Check for prospect search
+            prospect_phrases = ["find prospects", "search prospects", "find customers", "find leads", "search for prospects"]
+            if any(phrase in message_lower for phrase in prospect_phrases):
+                return {
+                    "intent_type": "find_prospects",
+                    "confidence": 0.8,
+                    "reasoning": "Detected prospect search request",
+                    "suggested_action": "search_prospects",
+                    "advance_workflow": True
+                }
+            
+            # Try enhanced fallback
             fallback_intent = await self._analyze_fallback_intent(message)
             if fallback_intent:
                 return fallback_intent
@@ -2243,14 +2279,14 @@ Could you clarify what you'd like help with?
             - "Not now" → wants_automation: false
             """
             
-            result = await self.research_agent.process_json_request(
-                prompt=prompt,
-                expected_fields=["wants_automation", "automation_type", "confidence", "reasoning"]
-            )
+            response = await self.research_agent.process_json_request(prompt)
             
-            if result.get("status") == "success":
-                return result.get("data", {})
-            else:
+            # Parse JSON response
+            import json
+            try:
+                result = json.loads(response)
+                return result
+            except:
                 # Fallback to keyword analysis
                 message_lower = message.lower()
                 wants_automation = any(word in message_lower for word in ["yes", "setup", "automate", "monitor", "sure", "ok", "sounds good"])
@@ -2298,14 +2334,14 @@ Could you clarify what you'd like help with?
             }}
             """
             
-            result = await self.research_agent.process_json_request(
-                prompt=prompt,
-                expected_fields=["intent_type", "confidence", "reasoning", "suggested_action", "advance_workflow"]
-            )
+            response = await self.research_agent.process_json_request(prompt)
             
-            if result.get("status") == "success":
-                return result.get("data", {})
-            else:
+            # Parse JSON response
+            import json
+            try:
+                result = json.loads(response)
+                return result
+            except:
                 # Simple keyword fallback
                 message_lower = message.lower()
                 if any(greeting in message_lower for greeting in ["hi", "hello", "hey", "greetings"]):
@@ -2356,14 +2392,14 @@ Could you clarify what you'd like help with?
             - "I'm not sure what to do" → action: "unclear"
             """
             
-            result = await self.research_agent.process_json_request(
-                prompt=prompt,
-                expected_fields=["action", "confidence", "reasoning", "response"]
-            )
+            response = await self.research_agent.process_json_request(prompt)
             
-            if result.get("status") == "success":
-                return result.get("data", {})
-            else:
+            # Parse JSON response
+            import json
+            try:
+                result = json.loads(response)
+                return result
+            except:
                 # Fallback to keyword analysis
                 message_lower = message.lower()
                 if "start over" in message_lower or "restart" in message_lower:
