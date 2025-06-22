@@ -575,7 +575,7 @@ class ADKICPAgent(ADKAgent):
                 return {"status": "error", "error_message": "ICP not found"}
             
             # Convert ICP to JSON-serializable format
-            icp_dict = existing_icp.model_dump()
+            icp_dict = self._safe_icp_to_dict(existing_icp)
             # Convert datetime objects to strings
             for key in ['created_at', 'updated_at']:
                 if key in icp_dict and hasattr(icp_dict[key], 'isoformat'):
@@ -621,7 +621,7 @@ class ADKICPAgent(ADKAgent):
                     response = response[3:-3].strip()
                 refined_data = json.loads(response)
             except json.JSONDecodeError:
-                refined_data = existing_icp.model_dump()
+                refined_data = self._safe_icp_to_dict(existing_icp)
                 # Apply specific changes manually if JSON parsing fails
                 if specific_changes:
                     refined_data.update(specific_changes)
@@ -638,7 +638,7 @@ class ADKICPAgent(ADKAgent):
             return {
                 "status": "success",
                 "icp_id": refined_icp.id,
-                "icp": refined_icp.model_dump(),
+                "icp": self._safe_icp_to_dict(refined_icp),
                 "changes_applied": True
             }
             
@@ -669,7 +669,7 @@ class ADKICPAgent(ADKAgent):
                 return {
                     "status": "success",
                     "format": "json",
-                    "icp": icp.model_dump()
+                    "icp": self._safe_icp_to_dict(icp)
                 }
             elif format == "text":
                 text_format = self._format_icp_as_text(icp)
@@ -811,7 +811,7 @@ class ADKICPAgent(ADKAgent):
                     "id": icp_id,
                     "name": icp.name,
                     "summary": self._create_icp_summary(icp),
-                    "icp": icp.model_dump()
+                    "icp": self._safe_icp_to_dict(icp)
                 })
             
             if active_icps:
@@ -948,3 +948,29 @@ class ADKICPAgent(ADKAgent):
                     findings[url] = analysis
         
         return {"status": "success", "findings": findings}
+    
+    def _safe_icp_to_dict(self, icp: ICP) -> Dict[str, Any]:
+        """Safely convert ICP to dictionary without circular references."""
+        return {
+            "id": icp.id,
+            "name": icp.name,
+            "description": icp.description,
+            "industries": icp.industries,
+            "target_roles": icp.target_roles,
+            "seniority_levels": icp.seniority_levels,
+            "departments": icp.departments,
+            "pain_points": icp.pain_points,
+            "goals": icp.goals,
+            "company_size": icp.company_size,
+            "geographic_regions": icp.geographic_regions,
+            "tech_stack": icp.tech_stack,
+            "tools_used": icp.tools_used,
+            "buying_signals": icp.buying_signals,
+            "exclusions": icp.exclusions,
+            "created_at": icp.created_at.isoformat() if hasattr(icp.created_at, 'isoformat') else str(icp.created_at),
+            "updated_at": icp.updated_at.isoformat() if hasattr(icp.updated_at, 'isoformat') else str(icp.updated_at),
+            "version": icp.version,
+            "feedback_history": icp.feedback_history,
+            "source_materials": getattr(icp, 'source_materials', []),
+            "confidence_score": getattr(icp, 'confidence_score', 0.0)
+        }
