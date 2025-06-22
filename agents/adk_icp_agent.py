@@ -294,12 +294,24 @@ class ADKICPAgent(ADKAgent):
                 )
                 self.logger.info(f"Saved research data - Key: {research_key}, Companies: {len(serializable_companies)}")
                 
-                # Use summary for prompt
-                companies_summary = f"Found {len(serializable_companies)} companies with detailed data. Examples: {json.dumps(serializable_companies[:3], indent=2, cls=DateTimeEncoder)}"
+                # Use summary for prompt - safely serialize to avoid circular references
+                try:
+                    companies_json = json.dumps(serializable_companies[:3], indent=2, cls=DateTimeEncoder)
+                    companies_summary = f"Found {len(serializable_companies)} companies with detailed data. Examples: {companies_json}"
+                except (TypeError, ValueError) as e:
+                    self.logger.warning(f"Could not serialize companies data, using basic summary: {e}")
+                    companies_summary = f"Found {len(serializable_companies)} companies with detailed data (serialization error: {str(e)})"
             else:
                 companies_summary = "None provided"
             
             # Generate ICP using AI analysis with HDW compatible criteria
+            # Safely serialize business_info to avoid circular references
+            try:
+                safe_business_info = json.dumps(business_info, indent=2, cls=DateTimeEncoder)
+            except (TypeError, ValueError) as e:
+                self.logger.warning(f"Could not serialize business_info, using string representation: {e}")
+                safe_business_info = str(business_info)
+            
             icp_prompt = f"""
             You are generating an ICP JSON structure. DO NOT call any functions.
             Simply analyze the information and return the JSON structure as requested.
@@ -309,7 +321,7 @@ class ADKICPAgent(ADKAgent):
             Create an Ideal Customer Profile based on the following information:
             
             Business Information:
-            {json.dumps(business_info, indent=2, cls=DateTimeEncoder)}
+            {safe_business_info}
             
             Researched Companies:
             {companies_summary}
@@ -380,20 +392,33 @@ class ADKICPAgent(ADKAgent):
             
             # Use process_json_request to prevent the agent from calling functions
             # This ensures we get pure JSON output instead of function calls
-            response = await self.process_json_request(icp_prompt)
+            try:
+                response = await self.process_json_request(icp_prompt)
+            except Exception as e:
+                self.logger.error(f"Error in process_json_request: {str(e)}")
+                raise
             
             # Parse the JSON response
             try:
                 icp_data = json.loads(response)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                self.logger.warning(f"JSON parsing failed: {str(e)}, using fallback ICP")
                 # Fallback if JSON parsing fails
                 icp_data = self._create_fallback_icp(business_info)
             
             # Create ICP object
-            icp = self._create_icp_from_data(icp_data)
+            try:
+                icp = self._create_icp_from_data(icp_data)
+            except Exception as e:
+                self.logger.error(f"Error in _create_icp_from_data: {str(e)}")
+                raise
             
             # Store the ICP
-            self.active_icps[icp.id] = icp
+            try:
+                self.active_icps[icp.id] = icp
+            except Exception as e:
+                self.logger.error(f"Error storing ICP: {str(e)}")
+                raise
             
             self.logger.info(f"ICP created from research - Icp_Id: {icp.id}, Name: {icp.name}")
             
