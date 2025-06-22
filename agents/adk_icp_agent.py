@@ -306,11 +306,7 @@ class ADKICPAgent(ADKAgent):
             
             # Generate ICP using AI analysis with HDW compatible criteria
             # Safely serialize business_info to avoid circular references
-            try:
-                safe_business_info = json.dumps(business_info, indent=2, cls=DateTimeEncoder)
-            except (TypeError, ValueError) as e:
-                self.logger.warning(f"Could not serialize business_info, using string representation: {e}")
-                safe_business_info = str(business_info)
+            safe_business_info = self._safe_serialize_business_info(business_info)
             
             icp_prompt = f"""
             You are generating an ICP JSON structure. DO NOT call any functions.
@@ -999,3 +995,38 @@ class ADKICPAgent(ADKAgent):
             "source_materials": getattr(icp, 'source_materials', []),
             "confidence_score": getattr(icp, 'confidence_score', 0.0)
         }
+    
+    def _safe_serialize_business_info(self, business_info: Any) -> str:
+        """Safely serialize business_info to avoid circular references."""
+        try:
+            # If it's already a dict, try to serialize directly
+            if isinstance(business_info, dict):
+                return json.dumps(business_info, indent=2, cls=DateTimeEncoder)
+            
+            # If it's an object with attributes, extract safe data
+            if hasattr(business_info, '__dict__'):
+                safe_data = {}
+                for key, value in business_info.__dict__.items():
+                    # Skip private attributes and methods
+                    if key.startswith('_') or callable(value):
+                        continue
+                    
+                    # Handle specific problematic types
+                    if hasattr(value, '__dict__') and not isinstance(value, (str, int, float, bool, list, dict)):
+                        # Convert complex objects to string representation
+                        safe_data[key] = str(value)
+                    else:
+                        safe_data[key] = value
+                
+                return json.dumps(safe_data, indent=2, cls=DateTimeEncoder)
+            
+            # Fallback to string representation
+            return str(business_info)
+            
+        except (TypeError, ValueError, RecursionError) as e:
+            self.logger.warning(f"Could not serialize business_info: {e}")
+            # Create a minimal safe representation
+            if hasattr(business_info, 'company_identifier'):
+                return f"Business Info: {business_info.company_identifier}"
+            else:
+                return f"Business Info: {type(business_info).__name__} object"

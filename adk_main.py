@@ -193,17 +193,26 @@ You can also provide links to:
                     yield response
             
             elif intent_type == "request_icp_creation":
-                # Jump to ICP creation if we have business info
-                if conversation.business_info.get("description") or message:
-                    if conversation.current_step != WorkflowStep.ICP_CREATION:
-                        conversation.advance_step(WorkflowStep.ICP_CREATION)
-                    async for chunk in self._handle_icp_creation_stream(conversation, message, attachments or []):
+                # Check if we need to do business research first (if URL provided)
+                website_urls = self._extract_urls(message)
+                if website_urls and not conversation.business_info.get("description"):
+                    # First do business research, then automatically create ICP
+                    yield "🔍 I'll research your business first, then create the ICP...\n\n"
+                    async for chunk in self._handle_business_description_stream(conversation, message, attachments or []):
                         full_response += chunk
                         yield chunk
                 else:
-                    response = "I'd be happy to create an ICP for you! First, could you tell me about your business? What products or services do you offer?"
-                    full_response = response
-                    yield response
+                    # We have business info or no URL provided, jump to ICP creation
+                    if conversation.business_info.get("description") or message:
+                        if conversation.current_step != WorkflowStep.ICP_CREATION:
+                            conversation.advance_step(WorkflowStep.ICP_CREATION)
+                        async for chunk in self._handle_icp_creation_stream(conversation, message, attachments or []):
+                            full_response += chunk
+                            yield chunk
+                    else:
+                        response = "I'd be happy to create an ICP for you! First, could you tell me about your business? What products or services do you offer?"
+                        full_response = response
+                        yield response
             
             elif intent_type == "find_prospects":
                 # Jump to prospect search, create basic ICP if needed
@@ -391,28 +400,55 @@ Just let me know how you'd like to proceed!
                 
                 # Check for website analysis
                 elif website_data := findings.get("website_analysis", {}):
-                    if company_name := website_data.get("company_name"):
-                        yield f"**Company:** {company_name}\n"
+                    # Handle the actual structure returned by Firecrawl analysis
+                    if business_model := website_data.get("business_model_and_value_proposition", {}):
+                        if isinstance(business_model, dict):
+                            if business_model.get("business_model"):
+                                yield f"**Business Model:** {business_model['business_model']}\n"
+                            if business_model.get("value_proposition"):
+                                yield f"**Value Proposition:** {business_model['value_proposition'][:200]}...\n"
                     
-                    if description := website_data.get("description"):
-                        yield f"**What you do:** {description}\n"
+                    if target_market := website_data.get("target_customers_and_market", {}):
+                        if isinstance(target_market, dict):
+                            if target_market.get("target_customers"):
+                                yield f"**Target Customers:** {target_market['target_customers'][:200]}...\n"
                     
-                    if products := website_data.get("products_services"):
-                        if isinstance(products, list):
-                            products_str = ", ".join(products[:3])
-                            if len(products) > 3:
-                                products_str += f" (+{len(products)-3} more)"
-                        else:
-                            products_str = str(products)
-                        yield f"**Products/Services:** {products_str}\n"
+                    if products_data := website_data.get("products_services_offered", {}):
+                        if isinstance(products_data, dict) and products_data.get("products_services"):
+                            products = products_data["products_services"]
+                            if isinstance(products, list):
+                                products_str = ", ".join(products[:3])
+                                if len(products) > 3:
+                                    products_str += f" (+{len(products)-3} more)"
+                                yield f"**Products/Services:** {products_str}\n"
                 
                 # Show sources used
                 if sources := business_info.get("sources_used", []):
                     yield f"\n**Data sources used:** {', '.join(sources)}\n"
                 
                 # If no structured findings were displayed, show a summary of what was found
-                if not (findings.get("linkedin_data") or findings.get("website_analysis")):
-                    if business_info.get("description"):
+                displayed_structured_data = (
+                    findings.get("linkedin_data") or 
+                    (findings.get("website_analysis", {}).get("business_model_and_value_proposition"))
+                )
+                
+                if not displayed_structured_data:
+                    # Fallback: try to show any available website analysis data
+                    if website_data := findings.get("website_analysis", {}):
+                        yield "**Analysis Summary:**\n"
+                        # Try to extract any useful information from the website data
+                        for key, value in website_data.items():
+                            if isinstance(value, dict):
+                                for sub_key, sub_value in value.items():
+                                    if isinstance(sub_value, str) and len(sub_value) > 20:
+                                        formatted_key = sub_key.replace("_", " ").title()
+                                        yield f"• **{formatted_key}:** {sub_value[:150]}...\n"
+                                        break  # Only show first meaningful value per section
+                            elif isinstance(value, str) and len(value) > 20:
+                                formatted_key = key.replace("_", " ").title()
+                                yield f"• **{formatted_key}:** {value[:150]}...\n"
+                    
+                    elif business_info.get("description"):
                         yield f"**Business Description:** {business_info.get('description')}\n"
                     
                     # Show any other key findings in a structured way
@@ -432,14 +468,27 @@ Just let me know how you'd like to proceed!
                     "provided_at": datetime.now().isoformat()
                 })
                 
-                # Don't auto-advance - let user decide
-                yield "\nGreat! I have a good understanding of your business.\n\n"
-                yield "What would you like to do next?\n\n"
-                yield "1. **Create an ICP** - Build your Ideal Customer Profile\n"
-                yield "2. **Find prospects directly** - Search for potential customers\n"
-                yield "3. **Analyze competitors** - Review competitor websites\n"
-                yield "4. **Tell me more** - Add more details about your business\n\n"
-                yield "Just type your choice or tell me what you'd like to do!"
+                # Check if user explicitly requested ICP creation in their message
+                icp_keywords = ["create icp", "build icp", "make icp", "let's create", "lets create", "build an icp", "create an icp"]
+                should_create_icp = any(keyword in message.lower() for keyword in icp_keywords)
+                
+                if should_create_icp:
+                    yield "\nGreat! I have a good understanding of your business.\n\n"
+                    yield "🏗️ Since you requested ICP creation, let me build that for you now...\n\n"
+                    
+                    # Advance to ICP creation and create it
+                    conversation.advance_step(WorkflowStep.ICP_CREATION)
+                    async for chunk in self._handle_icp_creation_stream(conversation, "", []):
+                        yield chunk
+                else:
+                    # Don't auto-advance - let user decide
+                    yield "\nGreat! I have a good understanding of your business.\n\n"
+                    yield "What would you like to do next?\n\n"
+                    yield "1. **Create an ICP** - Build your Ideal Customer Profile\n"
+                    yield "2. **Find prospects directly** - Search for potential customers\n"
+                    yield "3. **Analyze competitors** - Review competitor websites\n"
+                    yield "4. **Tell me more** - Add more details about your business\n\n"
+                    yield "Just type your choice or tell me what you'd like to do!"
                 
             else:
                 # If research fails, still save the info
@@ -1580,6 +1629,9 @@ Is there anything else I can help you with today?
         - "Hey there" → casual_greeting (don't advance workflow)
         - "We're a B2B SaaS company" → provide_business_info
         - "Create an ICP for me" → request_icp_creation
+        - "I'm CEO at https://company.com --> let's create ICP" → request_icp_creation (business info + ICP request)
+        - "Here's my website https://company.com, create an ICP" → request_icp_creation
+        - "My company is X, now build an ICP" → request_icp_creation
         - "Find me some prospects" → find_prospects
         - "What can you do?" → ask_question
         - "refine ice: focus on startups" → provide_feedback (if ICP exists)
@@ -1587,6 +1639,9 @@ Is there anything else I can help you with today?
         - "I don't like this ICP, modify it" → provide_feedback (if ICP exists)
         - "update the target criteria" → provide_feedback (if ICP exists)
         - "This ICP looks good, proceed" → provide_feedback (if ICP exists)
+        
+        IMPORTANT: If a message contains both business information AND explicit ICP creation requests 
+        (like "create ICP", "build ICP", "let's create", "make an ICP"), prioritize "request_icp_creation".
         """
         
         try:

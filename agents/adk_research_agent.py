@@ -260,7 +260,7 @@ class ADKResearchAgent(ADKAgent):
                 import json
                 insights = json.loads(insights_raw) if isinstance(insights_raw, str) else insights_raw
             except (json.JSONDecodeError, TypeError):
-                self.logger.warning("Failed to parse insights JSON, using raw string")
+                self.logger.debug("Failed to parse insights JSON, using raw string - this is expected when LLM returns markdown format")
                 insights = {"raw_insights": insights_raw}
             
             analysis_results["insights"] = insights
@@ -626,7 +626,17 @@ class ADKResearchAgent(ADKAgent):
         6. Ideal customer profile indicators
         7. Target customer characteristics
         
-        Return as structured analysis with clear insights and recommendations.
+        Return as structured JSON analysis with clear insights and recommendations.
+        Format your response as valid JSON with the following structure:
+        {{
+            "business_model_strategy": "analysis here",
+            "market_position": "analysis here", 
+            "technology_innovation": "analysis here",
+            "growth_potential": "analysis here",
+            "challenges_opportunities": "analysis here",
+            "icp_indicators": "analysis here",
+            "target_characteristics": "analysis here"
+        }}
         """
         
         # Use process_json_request to prevent infinite recursion
