@@ -620,8 +620,23 @@ Always check memory first when the user references past work or asks about previ
                 timeout=30  # Reduced from 300
             )
             
+            # Convert dataclass objects to dictionaries for caching
+            companies_dict = []
+            for company in companies:
+                if hasattr(company, '__dict__'):
+                    companies_dict.append(company.__dict__)
+                elif hasattr(company, 'model_dump'):
+                    companies_dict.append(company.model_dump())
+                else:
+                    # Fallback - convert to dict manually
+                    companies_dict.append({
+                        'name': getattr(company, 'name', ''),
+                        'alias': getattr(company, 'alias', ''),
+                        'urn': str(getattr(company, 'urn', ''))
+                    })
+            
             # Cache the result
-            self.cache_manager.set(cache_key, companies)
+            self.cache_manager.set(cache_key, companies_dict)
             
             self.logger.info(f"Companies found via HDW - Count: {len(companies)}")
             return {"status": "success", "companies": companies}

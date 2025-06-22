@@ -714,6 +714,12 @@ Once you're satisfied with the ICP, I'll use it to search for prospects using ou
             
             yield f"• Companies researched: {icp_result.get('research_used', len(example_companies))}\n\n"
             
+            # Add a complete ICP summary to ensure it's captured in conversation history
+            yield "**📋 Complete ICP Summary:**\n"
+            formatted_icp_summary = self._format_icp_for_display(icp_data)
+            yield formatted_icp_summary
+            yield "\n\n"
+            
             # Move to refinement phase
             conversation.advance_step(WorkflowStep.ICP_REFINEMENT)
             
