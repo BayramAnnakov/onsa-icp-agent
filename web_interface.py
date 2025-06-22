@@ -541,7 +541,7 @@ def create_interface():
         # Event handlers
         async def respond(message, chat_history, agent, attach_text):
             if not message:
-                yield chat_history, status.value, gr.update(), gr.update()
+                yield chat_history, status.value, gr.update()
                 return
             
             # Parse attachments
@@ -565,15 +565,15 @@ def create_interface():
                 attachments
             ):
                 if table_visible and table_data:
-                    yield updated_history, new_status, gr.update(value=table_data, visible=True), gr.update()
+                    yield updated_history, new_status, gr.update(value=table_data, visible=True)
                 else:
-                    yield updated_history, new_status, gr.update(), gr.update()
+                    yield updated_history, new_status, gr.update()
         
         # Submit handlers
         msg.submit(
             respond,
             [msg, chatbot, agent_type, attachments],
-            [chatbot, status, prospect_table, msg]
+            [chatbot, status, prospect_table]
         ).then(
             lambda: "",
             None,
@@ -583,7 +583,7 @@ def create_interface():
         submit.click(
             respond,
             [msg, chatbot, agent_type, attachments],
-            [chatbot, status, prospect_table, msg]
+            [chatbot, status, prospect_table]
         ).then(
             lambda: "",
             None,
