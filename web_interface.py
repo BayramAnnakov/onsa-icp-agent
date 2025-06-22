@@ -660,6 +660,14 @@ def create_interface(web_interface=None, deployment_mode="local"):
                     value="Ready to start",
                     interactive=False
                 )
+                
+                # Progress display (hidden by default)
+                progress_status = gr.Textbox(
+                    label="Operation Progress",
+                    value="",
+                    interactive=False,
+                    visible=False
+                )
             
             with gr.Column(scale=1):
                 # Controls
@@ -704,15 +712,34 @@ def create_interface(web_interface=None, deployment_mode="local"):
                 export_btn = gr.Button("Export", variant="secondary")
                 export_status = gr.Textbox(label="Export Status", interactive=False)
         
+        # Polling function for progress updates
+        def poll_progress(conversation_id):
+            """Poll for operation progress updates."""
+            if not conversation_id or not web_interface.orchestrator:
+                return gr.update(visible=False)
+            
+            progress = web_interface.orchestrator.get_operation_progress(conversation_id)
+            if progress:
+                # Format progress message
+                step = progress.get('step', 0)
+                total_steps = progress.get('total_steps', 3)
+                message = progress.get('message', 'Processing...')
+                percentage = progress.get('percentage', 0)
+                
+                progress_text = f"{message}\n\nStep {step} of {total_steps} - {percentage}% complete"
+                return gr.update(value=progress_text, visible=True)
+            else:
+                return gr.update(visible=False)
+        
         # Event handlers
         async def respond(message, chat_history, agent, attach_text):
             if not message:
-                yield chat_history, status.value, gr.update(visible=False)
+                yield chat_history, status.value, gr.update(visible=False), gr.update(visible=False)
                 return
             
             # Immediately show user message in chat with processing indicator
             chat_history.append((message, "🤖 Processing..."))
-            yield chat_history, "Agent is thinking...", gr.update(visible=False)
+            yield chat_history, "Agent is thinking...", gr.update(visible=False), gr.update(visible=False)
             
             # Parse attachments
             attachments = []
@@ -739,6 +766,22 @@ def create_interface(web_interface=None, deployment_mode="local"):
                 if deployment_mode == "cloud_run":
                     # Use non-streaming mode for Cloud Run
                     logger.info("Using non-streaming mode for Cloud Run deployment")
+                    
+                    # Check if this might be a prospect search
+                    is_prospect_search = any(word in message.lower() for word in ["prospect", "search", "find", "lead"])
+                    if is_prospect_search and web_interface.current_conversation_id:
+                        # Show initial detailed status
+                        detailed_status = """🔍 **Starting prospect search...**
+
+This will take approximately 30-60 seconds:
+⏳ Step 1/3: Loading your ICP criteria
+⏳ Step 2/3: Searching HorizonDataWave and Exa AI databases  
+⏳ Step 3/3: AI scoring and ranking prospects
+
+Please wait while I find the best matches..."""
+                        chat_history[-1] = (message, detailed_status)
+                        yield chat_history, "Searching for prospects...", gr.update(visible=False), gr.update(value="Initializing search...", visible=True)
+                    
                     updated_history, new_status, table_data, table_visible = await web_interface.process_message_non_stream(
                         message,
                         chat_history,
@@ -746,7 +789,7 @@ def create_interface(web_interface=None, deployment_mode="local"):
                         attachments
                     )
                     # Always keep table hidden - prospects are shown in chat
-                    yield updated_history, new_status, gr.update(visible=False)
+                    yield updated_history, new_status, gr.update(visible=False), gr.update(visible=False)
                 else:
                     # Use streaming mode for local deployment
                     async for updated_history, new_status, table_data, table_visible in web_interface.process_message_stream(
@@ -756,7 +799,7 @@ def create_interface(web_interface=None, deployment_mode="local"):
                         attachments
                     ):
                         # Always keep table hidden - prospects are shown in chat
-                        yield updated_history, new_status, gr.update(visible=False)
+                        yield updated_history, new_status, gr.update(visible=False), gr.update(visible=False)
             except Exception as e:
                 logger.error(f"Error in respond handler: {str(e)}", exc_info=True)
                 error_msg = f"Error: {str(e)}"
@@ -764,13 +807,13 @@ def create_interface(web_interface=None, deployment_mode="local"):
                     chat_history[-1] = (chat_history[-1][0], error_msg)
                 else:
                     chat_history.append((message, error_msg))
-                yield chat_history, error_msg, gr.update(visible=False)
+                yield chat_history, error_msg, gr.update(visible=False), gr.update(visible=False)
         
         # Submit handlers
         msg.submit(
             respond,
             [msg, chatbot, agent_type, attachments],
-            [chatbot, status, prospect_table]
+            [chatbot, status, prospect_table, progress_status]
         ).then(
             lambda: "",
             None,
@@ -780,7 +823,7 @@ def create_interface(web_interface=None, deployment_mode="local"):
         submit.click(
             respond,
             [msg, chatbot, agent_type, attachments],
-            [chatbot, status, prospect_table]
+            [chatbot, status, prospect_table, progress_status]
         ).then(
             lambda: "",
             None,
@@ -790,18 +833,18 @@ def create_interface(web_interface=None, deployment_mode="local"):
         # Session management
         async def start_new_session():
             await web_interface.start_new_conversation()
-            return [], "New session started", web_interface.get_saved_sessions(), gr.update(visible=False)
+            return [], "New session started", web_interface.get_saved_sessions(), gr.update(visible=False), gr.update(visible=False)
         
         new_session.click(
             start_new_session,
             None,
-            [chatbot, status, session_dropdown, prospect_table]
+            [chatbot, status, session_dropdown, prospect_table, progress_status]
         )
         
         clear.click(
-            lambda: ([], "History cleared", gr.update(visible=False)),
+            lambda: ([], "History cleared", gr.update(visible=False), gr.update(visible=False)),
             None,
-            [chatbot, status, prospect_table]
+            [chatbot, status, prospect_table, progress_status]
         )
         
         # Save/Load handlers
@@ -833,6 +876,26 @@ def create_interface(web_interface=None, deployment_mode="local"):
             lambda: web_interface.get_saved_sessions(),
             None,
             session_dropdown
+        )
+        
+        # Set up periodic polling for progress updates
+        # Use a hidden state component to track if polling is active
+        polling_active = gr.State(False)
+        conversation_id_state = gr.State("")
+        
+        # Update conversation ID when message is sent
+        def update_conversation_id():
+            return web_interface.current_conversation_id if web_interface.current_conversation_id else ""
+        
+        msg.submit(update_conversation_id, None, conversation_id_state)
+        submit.click(update_conversation_id, None, conversation_id_state)
+        
+        # Periodic progress update (every 2 seconds)
+        progress_timer = gr.Timer(2.0, active=True)
+        progress_timer.tick(
+            poll_progress,
+            inputs=[conversation_id_state],
+            outputs=[progress_status]
         )
     
     return app

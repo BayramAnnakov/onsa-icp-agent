@@ -146,7 +146,8 @@ class ADKProspectAgent(ADKAgent):
         icp_criteria: Dict[str, Any],
         search_limit: int = 50,
         sources: Optional[List[str]] = None,
-        location_filter: Optional[str] = None
+        location_filter: Optional[str] = None,
+        progress_callback: Optional[callable] = None
     ) -> Dict[str, Any]:
         """Search for prospects using multiple data sources.
         
@@ -206,6 +207,14 @@ class ADKProspectAgent(ADKAgent):
             # Execute all search tasks in parallel with timeout
             if search_tasks:
                 self.logger.info(f"Executing {len(search_tasks)} search tasks in parallel")
+                
+                # Update progress if callback provided
+                if progress_callback:
+                    await progress_callback({
+                        "status": "searching_sources",
+                        "message": f"🔄 Searching {len(search_tasks)} data sources in parallel...",
+                        "percentage": 30
+                    })
                 
                 # Add timeout for API calls (30 seconds per task)
                 try:
@@ -275,6 +284,15 @@ class ADKProspectAgent(ADKAgent):
             scored_prospects = []
             
             self.logger.info(f"Scoring {len(prospects_to_score)} prospects")
+            
+            # Update progress for scoring phase
+            if progress_callback and prospects_to_score:
+                await progress_callback({
+                    "status": "scoring",
+                    "message": f"⚡ AI scoring {len(prospects_to_score)} prospects against your ICP...",
+                    "percentage": 60
+                })
+            
             if prospects_to_score:
                 # Use batch scoring for better performance
                 batch_result = await self.batch_score_prospects(

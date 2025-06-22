@@ -55,6 +55,9 @@ class ADKAgentOrchestrator:
         self.conversations: Dict[str, Conversation] = {}
         self.current_conversation: Optional[Conversation] = None
         
+        # Progress tracking for long operations
+        self.operation_progress: Dict[str, Dict[str, Any]] = {}
+        
         # Ensure sessions directory exists for CSV exports
         from pathlib import Path
         Path("sessions").mkdir(exist_ok=True)
@@ -981,6 +984,16 @@ This typically takes 30-60 seconds...
         """.strip()
         
         try:
+            # Initialize progress tracking
+            self.update_operation_progress(conversation.id, {
+                "operation": "prospect_search",
+                "status": "starting",
+                "step": 1,
+                "total_steps": 3,
+                "message": "📋 Loading your ICP criteria...",
+                "percentage": 10
+            })
+            
             # Get ICP criteria
             icp_export = await self.icp_agent.export_icp(
                 icp_id=conversation.current_icp_id,
@@ -988,25 +1001,57 @@ This typically takes 30-60 seconds...
             )
             
             if icp_export["status"] != "success":
+                self.clear_operation_progress(conversation.id)
                 return f"{search_status}\n\n❌ I couldn't retrieve your ICP for prospect search. Please try again."
             
             icp_criteria = icp_export["icp"]
+            
+            # Update progress for search phase
+            self.update_operation_progress(conversation.id, {
+                "operation": "prospect_search",
+                "status": "searching",
+                "step": 2,
+                "total_steps": 3,
+                "message": "🔄 Searching HorizonDataWave and Exa AI databases...",
+                "percentage": 20
+            })
+            
+            # Create progress callback
+            async def update_search_progress(progress_data):
+                self.update_operation_progress(conversation.id, {
+                    "operation": "prospect_search",
+                    "step": 2,
+                    "total_steps": 3,
+                    **progress_data
+                })
             
             # Use ADK Prospect Agent to search for prospects
             search_result = await self.prospect_agent.search_prospects_multi_source(
                 icp_criteria=icp_criteria,
                 search_limit=50,
                 sources=["hdw", "exa"],
-                location_filter="United States, Canada, United Kingdom"
+                location_filter="United States, Canada, United Kingdom",
+                progress_callback=update_search_progress
             )
             
             if search_result["status"] != "success":
+                self.clear_operation_progress(conversation.id)
                 return f"I encountered an error searching for prospects: {search_result.get('error_message', 'Unknown error')}. Let me try again with different parameters."
             
             prospects = search_result.get("prospects", [])
             
             # Store prospect IDs
             conversation.current_prospects = [p.get("id") for p in prospects]
+            
+            # Update progress for ranking phase
+            self.update_operation_progress(conversation.id, {
+                "operation": "prospect_search",
+                "status": "ranking",
+                "step": 3,
+                "total_steps": 3,
+                "message": f"⚡ Scoring and ranking {len(prospects)} prospects...",
+                "percentage": 80
+            })
             
             # Get top 10 highest-scoring prospects for review
             if prospects:
@@ -1028,6 +1073,9 @@ This typically takes 30-60 seconds...
             
             # Move to prospect review
             conversation.advance_step(WorkflowStep.PROSPECT_REVIEW)
+            
+            # Clear progress tracking
+            self.clear_operation_progress(conversation.id)
             
             return f"""
 ✅ **Prospect Search Complete!**
@@ -1055,6 +1103,7 @@ Your feedback will help me improve the prospect selection using AI analysis.
             
         except Exception as e:
             self.logger.error(f"Error searching prospects with ADK agent - Error: {str(e)}")
+            self.clear_operation_progress(conversation.id)
             return f"I encountered an error searching for prospects: {str(e)}. Let me try again with different parameters."
     
     async def _handle_prospect_search_stream(
@@ -2990,6 +3039,23 @@ Could you clarify what you'd like help with?
             "automation_enabled": conversation.automation_enabled,
             "powered_by": "Google ADK"
         }
+    
+    def update_operation_progress(self, conversation_id: str, progress_data: Dict[str, Any]) -> None:
+        """Update progress for a long-running operation."""
+        self.operation_progress[conversation_id] = {
+            "timestamp": datetime.now().isoformat(),
+            **progress_data
+        }
+        self.logger.debug(f"Progress updated for {conversation_id}: {progress_data}")
+    
+    def get_operation_progress(self, conversation_id: str) -> Optional[Dict[str, Any]]:
+        """Get current progress for a conversation's operation."""
+        return self.operation_progress.get(conversation_id)
+    
+    def clear_operation_progress(self, conversation_id: str) -> None:
+        """Clear progress tracking for a conversation."""
+        if conversation_id in self.operation_progress:
+            del self.operation_progress[conversation_id]
     
     async def _store_conversation_to_memory(self, conversation: Conversation) -> None:
         """Store conversation to persistent memory (SQLite database)."""
