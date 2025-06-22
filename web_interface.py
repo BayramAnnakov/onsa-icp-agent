@@ -804,10 +804,11 @@ def run_cloud_server():
             }
         }
     
-    # Add root endpoint
+    # Add root endpoint with redirect
     @fastapi_app.get("/")
     async def root():
-        return {"message": "ADK Sales System - Access the UI at /gradio"}
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url="/gradio", status_code=307)
     
     # Create Gradio app for Cloud Run
     gradio_app, _ = create_app_for_deployment("cloud_run")

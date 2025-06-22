@@ -142,5 +142,21 @@
     "state": {},
     "created_at": "2025-06-21T23:34:38.056434",
     "updated_at": "2025-06-21T23:34:38.056450"
+  },
+  "icp_agent_system:json_gen_7c88b72d1389": {
+    "app_name": "icp_agent_system",
+    "user_id": "system",
+    "session_id": "json_gen_7c88b72d1389",
+    "state": {},
+    "created_at": "2025-06-22T10:46:53.754728",
+    "updated_at": "2025-06-22T10:46:53.754735"
+  },
+  "icp_agent_system:json_gen_b9dbd1e993ac": {
+    "app_name": "icp_agent_system",
+    "user_id": "system",
+    "session_id": "json_gen_b9dbd1e993ac",
+    "state": {},
+    "created_at": "2025-06-22T10:47:12.115683",
+    "updated_at": "2025-06-22T10:47:12.115699"
   }
 }

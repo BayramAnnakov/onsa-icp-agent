@@ -81,7 +81,8 @@ async def root():
             "capabilities": "/a2a/capabilities",
             "execute": "/a2a/task",
             "health": "/health",
-            "metrics": "/metrics"
+            "metrics": "/metrics",
+            "docs": "/docs"
         }
     }
 

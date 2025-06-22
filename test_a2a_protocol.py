@@ -72,18 +72,22 @@ async def test_icp_creation(client: httpx.AsyncClient, base_url: str):
     
     # Create task request
     task_request = create_task_request(
-        capability_name="create_icp_from_description",
+        capability_name="create_icp_from_research",
         parameters={
-            "business_description": "We are a B2B SaaS company that provides AI-powered customer support tools for e-commerce businesses.",
-            "target_market": "Online retailers with 50-500 employees",
-            "value_proposition": "Reduce customer support costs by 40% with AI automation"
+            "business_info": {
+                "description": "We are a B2B SaaS company that provides AI-powered customer support tools for e-commerce businesses.",
+                "target_market": "Online retailers with 50-500 employees",
+                "value_proposition": "Reduce customer support costs by 40% with AI automation"
+            },
+            "example_companies": [],
+            "research_depth": "standard"
         }
     )
     
     print("   → Sending ICP creation request...")
     response = await client.post(
         f"{base_url}/a2a/task",
-        json=task_request.dict()
+        json=task_request.model_dump()
     )
     
     if response.status_code != 200:
@@ -115,21 +119,29 @@ async def test_prospect_search(client: httpx.AsyncClient, base_url: str):
     print("\n5. Testing Prospect Search...")
     
     # First, we need an ICP ID - in real scenario, you'd get this from previous step
-    # For testing, we'll use a search with criteria
+    # For testing, we'll use multi-source search
     task_request = create_task_request(
-        capability_name="search_prospects_by_criteria",
+        capability_name="search_prospects_multi_source",
         parameters={
-            "industries": ["Software", "Technology"],
-            "company_sizes": ["51-200", "201-500"],
-            "titles": ["CEO", "CTO", "VP Sales"],
-            "limit": 5
+            "icp_criteria": {
+                "company_criteria": {
+                    "industry": {"values": ["Software", "Technology"], "weight": 0.3},
+                    "company_size": {"values": ["51-200", "201-500"], "weight": 0.2}
+                },
+                "person_criteria": {
+                    "titles": {"values": ["CEO", "CTO", "VP Sales"], "weight": 0.3}
+                }
+            },
+            "search_limit": 5,
+            "sources": ["hdw", "exa"],
+            "location_filter": "United States"
         }
     )
     
     print("   → Sending prospect search request...")
     response = await client.post(
         f"{base_url}/a2a/task",
-        json=task_request.dict()
+        json=task_request.model_dump()
     )
     
     if response.status_code != 200:
