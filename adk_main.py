@@ -417,7 +417,11 @@ Just let me know how you'd like to proceed!
                         if isinstance(products_data, dict) and products_data.get("products_services"):
                             products = products_data["products_services"]
                             if isinstance(products, list):
-                                products_str = ", ".join(products[:3])
+                                # Handle both string lists and dict lists
+                                if products and isinstance(products[0], dict):
+                                    products_str = ", ".join(p.get("name", str(p)) for p in products[:3])
+                                else:
+                                    products_str = ", ".join(str(p) for p in products[:3])
                                 if len(products) > 3:
                                     products_str += f" (+{len(products)-3} more)"
                                 yield f"**Products/Services:** {products_str}\n"
