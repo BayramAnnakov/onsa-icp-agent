@@ -2419,7 +2419,7 @@ Could you clarify what you'd like help with?
         
         # Create a summary table first with match reasoning
         table_lines = ["| # | Name | Title | Company | Score | Why Good Match |", 
-                      "|---|------|-------|---------|-------|----------------|"]"
+                      "|---|------|-------|---------|-------|----------------|"]
         
         for i, prospect in enumerate(prospects[:10], 1):
             company = prospect.get('company', {})
