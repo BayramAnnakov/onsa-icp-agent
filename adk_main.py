@@ -7,6 +7,8 @@ This is the primary entry point that coordinates all ADK-based agents and manage
 import asyncio
 import json
 import sys
+import csv
+import io
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 import structlog
@@ -52,6 +54,10 @@ class ADKAgentOrchestrator:
         # Active conversations
         self.conversations: Dict[str, Conversation] = {}
         self.current_conversation: Optional[Conversation] = None
+        
+        # Ensure sessions directory exists for CSV exports
+        from pathlib import Path
+        Path("sessions").mkdir(exist_ok=True)
         
         self.logger.info(f"ADK Agent orchestrator initialized - Memory enabled: {bool(self.memory_manager)}")
     
@@ -1400,6 +1406,62 @@ I'll use this feedback to improve the prospect selection using AI analysis.
     ) -> str:
         """Handle final approval and automation setup."""
         
+        # Always generate CSV for approved prospects first
+        prospects_for_export = []
+        
+        # Get top prospects from the agent
+        for prospect_id in conversation.current_prospects[:50]:  # Export up to 50
+            if prospect_id in self.prospect_agent.active_prospects:
+                prospect = self.prospect_agent.active_prospects[prospect_id]
+                # Convert Prospect model to dict for CSV export
+                prospect_dict = {
+                    'person': prospect.person.model_dump(),
+                    'company': prospect.company.model_dump(),
+                    'score': prospect.score.model_dump()
+                }
+                prospects_for_export.append(prospect_dict)
+        
+        # Generate CSV content
+        csv_content = self.export_prospects_to_csv(prospects_for_export, min_score=0.6)
+        
+        # Save CSV to a file in the sessions directory
+        from pathlib import Path
+        csv_filename = f"prospects_{conversation.id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        csv_path = Path("sessions") / csv_filename
+        
+        with open(csv_path, 'w', newline='', encoding='utf-8') as f:
+            f.write(csv_content)
+        
+        # Count high-scoring prospects
+        high_score_count = sum(1 for p in prospects_for_export if p['score']['total_score'] >= 0.6)
+        
+        # Check if user explicitly wants CSV export or other actions
+        message_lower = message.lower()
+        if any(keyword in message_lower for keyword in ['csv', 'export', 'download']):
+            return f"""
+💾 **CSV Export Complete!**
+
+I've exported your prospects to: `{csv_filename}`
+
+**Export Summary:**
+- Total prospects exported: {len(prospects_for_export)}
+- High-scoring prospects (≥0.6): {high_score_count}
+- File location: sessions/{csv_filename}
+
+**CSV includes:**
+- Contact details (name, title, email)
+- Company information (name, industry, size)
+- LinkedIn URLs for both person and company
+- Match scores and reasoning
+
+The file is ready for import into your CRM or further analysis!
+
+Would you like to:
+- 🔄 Set up automated prospect monitoring
+- 🎯 Find more prospects like these
+- 📧 Generate outreach templates
+            """.strip()
+        
         # Use LLM to analyze automation setup intent
         intent_analysis = await self._analyze_automation_setup_intent(message)
         
@@ -1407,8 +1469,11 @@ I'll use this feedback to improve the prospect selection using AI analysis.
             conversation.advance_step(WorkflowStep.AUTOMATION_SETUP)
             conversation.automation_enabled = True
             
-            return """
+            return f"""
 Perfect! I've set up automated prospect monitoring using Google ADK agents.
+
+**Your CSV Export:**
+✅ Saved to: `{csv_filename}` ({high_score_count} high-scoring prospects)
 
 **ADK Automation Details:**
 - Frequency: Daily monitoring with AI-powered search
@@ -1423,10 +1488,10 @@ Perfect! I've set up automated prospect monitoring using Google ADK agents.
 - ADK Prospect Agent: For lead discovery and scoring
 
 **Next Steps:**
-1. ADK agents start monitoring immediately
-2. You'll receive your first update within 24 hours
-3. Provide feedback to help agents learn and improve
-4. AI-powered refinement based on your interactions
+1. Import the CSV into your CRM for immediate outreach
+2. ADK agents start monitoring immediately
+3. You'll receive your first update within 24 hours
+4. Provide feedback to help agents learn and improve
 
 Thank you for using the Google ADK Multi-Agent Sales Lead Generation System! 🎯
             """.strip()
@@ -1434,12 +1499,15 @@ Thank you for using the Google ADK Multi-Agent Sales Lead Generation System! �
         else:
             conversation.advance_step(WorkflowStep.COMPLETED)
             
-            return """
+            return f"""
 No problem! Your ICP and prospect list have been saved with Google ADK.
+
+**Your CSV Export:**
+✅ Saved to: `{csv_filename}` ({high_score_count} high-scoring prospects)
 
 **What you have:**
 - AI-generated ICP based on multi-source research
-- List of 50 scored prospects from HorizonDataWave and Exa
+- List of {len(prospects_for_export)} scored prospects from HorizonDataWave and Exa
 - Top 10 highest-priority prospects for immediate outreach
 - All data processed and validated by Google ADK agents
 
@@ -1449,7 +1517,7 @@ You can return anytime to:
 - Search for more prospects with improved criteria
 - Export your prospect data in various formats
 
-Thank you for using our Google ADK system! Feel free to reach out when you need more prospects.
+The CSV file is ready for import into your CRM. Thank you for using our Google ADK system!
             """.strip()
     
     async def _handle_automation_setup(
@@ -2349,9 +2417,9 @@ Could you clarify what you'd like help with?
     def _format_prospects_for_display(self, prospects: List[Dict[str, Any]]) -> str:
         """Format prospects for user-friendly display with enhanced formatting."""
         
-        # Create a summary table first
-        table_lines = ["| # | Name | Title | Company | Score |", 
-                      "|---|------|-------|---------|-------|"]
+        # Create a summary table first with match reasoning
+        table_lines = ["| # | Name | Title | Company | Score | Why Good Match |", 
+                      "|---|------|-------|---------|-------|----------------|"]"
         
         for i, prospect in enumerate(prospects[:10], 1):
             company = prospect.get('company', {})
@@ -2367,11 +2435,33 @@ Could you clarify what you'd like help with?
             else:
                 score_emoji = "🔴"
             
-            name = f"{person.get('first_name', 'Unknown')} {person.get('last_name', '')}"
-            title = person.get('title', 'Unknown')[:30]
-            company_name = company.get('name', 'Unknown')[:25]
+            # Format name with LinkedIn link if available
+            first_name = person.get('first_name', 'Unknown')
+            last_name = person.get('last_name', '')
+            full_name = f"{first_name} {last_name}".strip()
             
-            table_lines.append(f"| {i} | {name} | {title} | {company_name} | {score_emoji} {score_val:.2f} |")
+            person_linkedin = person.get('linkedin_url', '')
+            if person_linkedin and person_linkedin != 'Not available':
+                name_display = f"[{full_name}]({person_linkedin})"
+            else:
+                name_display = full_name
+            
+            # Format company with LinkedIn link if available
+            company_name = company.get('name', 'Unknown')[:25]
+            company_linkedin = company.get('linkedin_url', '')
+            if company_linkedin and company_linkedin != 'Not available':
+                company_display = f"[{company_name}]({company_linkedin})"
+            else:
+                company_display = company_name
+            
+            title = person.get('title', 'Unknown')[:30]
+            
+            # Get match reasoning (truncated for table)
+            match_reason = score.get('score_explanation', 'AI-matched to your ICP')
+            if len(match_reason) > 50:
+                match_reason = match_reason[:47] + "..."
+            
+            table_lines.append(f"| {i} | {name_display} | {title} | {company_display} | {score_emoji} {score_val:.2f} | {match_reason} |")
         
         # Add detailed view
         detailed_prospects = []
@@ -2388,6 +2478,9 @@ Could you clarify what you'd like help with?
             email = person.get('email', 'Not available')
             email_display = f"`{email}`" if email != 'Not available' else email
             
+            # Format detailed view with full match reasoning
+            full_match_reason = score.get('score_explanation', 'AI-matched to your ICP based on multiple criteria')
+            
             formatted_prospect = f"""
 <details>
 <summary><b>{i}. {person.get('first_name', 'Unknown')} {person.get('last_name', 'Person')}</b> - {person.get('title', 'Unknown Title')}</summary>
@@ -2398,6 +2491,7 @@ Could you clarify what you'd like help with?
 **Location:** {company.get('headquarters', 'Unknown')}  
 
 **Score:** {score.get('total_score', 0):.2f}/1.0 (AI-Generated)  
+**Why Good Match:** {full_match_reason}  
 **Email:** {email_display}  
 **LinkedIn:** {linkedin_display}  
 
@@ -2406,6 +2500,59 @@ Could you clarify what you'd like help with?
             detailed_prospects.append(formatted_prospect)
         
         return "\n".join(table_lines) + "\n\n**Detailed View (click to expand):**\n\n" + '\n'.join(detailed_prospects)
+    
+    def export_prospects_to_csv(self, prospects: List[Dict[str, Any]], min_score: float = 0.6) -> str:
+        """Export prospects to CSV format for easy download and CRM import.
+        
+        Args:
+            prospects: List of prospect dictionaries
+            min_score: Minimum score threshold for inclusion (default 0.6)
+            
+        Returns:
+            CSV string with prospect data
+        """
+        output = io.StringIO()
+        
+        # Define CSV headers
+        fieldnames = [
+            'Name', 'Title', 'Company', 'Industry', 'Company Size', 
+            'Location', 'Email', 'LinkedIn URL', 'Company LinkedIn', 
+            'Score', 'Match Reasoning'
+        ]
+        
+        writer = csv.DictWriter(output, fieldnames=fieldnames)
+        writer.writeheader()
+        
+        # Filter and write prospects
+        for prospect in prospects:
+            score = prospect.get('score', {})
+            total_score = score.get('total_score', 0)
+            
+            # Only include prospects above minimum score
+            if total_score >= min_score:
+                person = prospect.get('person', {})
+                company = prospect.get('company', {})
+                
+                row = {
+                    'Name': f"{person.get('first_name', '')} {person.get('last_name', '')}".strip(),
+                    'Title': person.get('title', ''),
+                    'Company': company.get('name', ''),
+                    'Industry': company.get('industry', ''),
+                    'Company Size': company.get('employee_range', ''),
+                    'Location': company.get('headquarters', ''),
+                    'Email': person.get('email', 'Not available'),
+                    'LinkedIn URL': person.get('linkedin_url', 'Not available'),
+                    'Company LinkedIn': company.get('linkedin_url', 'Not available'),
+                    'Score': f"{total_score:.2f}",
+                    'Match Reasoning': score.get('score_explanation', 'AI-matched to your ICP')
+                }
+                
+                writer.writerow(row)
+        
+        csv_content = output.getvalue()
+        output.close()
+        
+        return csv_content
     
     def _format_prospects_as_list(self, prospect_ids: List[str]) -> str:
         """Format prospect IDs as a detailed list for final summary."""
