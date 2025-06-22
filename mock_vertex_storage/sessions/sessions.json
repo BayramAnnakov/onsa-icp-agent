@@ -158,5 +158,37 @@
     "state": {},
     "created_at": "2025-06-22T10:47:12.115683",
     "updated_at": "2025-06-22T10:47:12.115699"
+  },
+  "icp_agent_system:json_gen_a1f28acc3050": {
+    "app_name": "icp_agent_system",
+    "user_id": "system",
+    "session_id": "json_gen_a1f28acc3050",
+    "state": {},
+    "created_at": "2025-06-22T11:04:24.967660",
+    "updated_at": "2025-06-22T11:04:24.967664"
+  },
+  "icp_agent_system:json_gen_38290229ad32": {
+    "app_name": "icp_agent_system",
+    "user_id": "system",
+    "session_id": "json_gen_38290229ad32",
+    "state": {},
+    "created_at": "2025-06-22T11:04:43.022837",
+    "updated_at": "2025-06-22T11:04:43.022855"
+  },
+  "icp_agent_system:json_gen_24fc38e2b44d": {
+    "app_name": "icp_agent_system",
+    "user_id": "system",
+    "session_id": "json_gen_24fc38e2b44d",
+    "state": {},
+    "created_at": "2025-06-22T11:05:44.419517",
+    "updated_at": "2025-06-22T11:05:44.419524"
+  },
+  "icp_agent_system:json_gen_78f323b1efff": {
+    "app_name": "icp_agent_system",
+    "user_id": "system",
+    "session_id": "json_gen_78f323b1efff",
+    "state": {},
+    "created_at": "2025-06-22T11:05:50.069528",
+    "updated_at": "2025-06-22T11:05:50.069542"
   }
 }

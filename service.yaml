@@ -16,7 +16,7 @@ spec:
         run.googleapis.com/execution-environment: gen2
         run.googleapis.com/service-account: adk-agent-memory@bayram-adk-hack.iam.gserviceaccount.com
     spec:
-      containerConcurrency: 10
+      containerConcurrency: 5
       timeoutSeconds: 3600
       containers:
       - image: gcr.io/PROJECT_ID/adk-sales-system:latest

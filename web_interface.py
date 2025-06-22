@@ -34,6 +34,11 @@ class WebInterface:
         self.config = Config.load_from_file()
         self.config.ensure_directories()
         
+        # Detect deployment mode
+        self.deployment_mode = os.environ.get("DEPLOYMENT_MODE", "local").lower()
+        self.is_cloud_run = self.deployment_mode == "cloud_run"
+        logger.info(f"Deployment mode detected: {self.deployment_mode}, is_cloud_run: {self.is_cloud_run}")
+        
         # Initialize memory manager if VertexAI is enabled
         memory_manager = None
         if self.config.vertexai.enabled:
@@ -53,7 +58,7 @@ class WebInterface:
         self.sessions_dir = Path("sessions")
         self.sessions_dir.mkdir(exist_ok=True)
         
-        logger.info(f"Web interface initialized - Memory enabled: {bool(memory_manager)}")
+        logger.info(f"Web interface initialized - Memory enabled: {bool(memory_manager)}, Deployment: {self.deployment_mode}")
     
     async def start_new_conversation(self, user_id: str = "web_user") -> str:
         """Start a new conversation."""
@@ -222,14 +227,23 @@ class WebInterface:
             if agent_type == "Main Workflow":
                 # Collect full response for history tracking
                 full_response = ""
+                stream_count = 0
+                
+                logger.info(f"Starting streaming response for conversation {self.current_conversation_id}")
+                
                 async for chunk in self.orchestrator.process_user_message_stream(
                     self.current_conversation_id,
                     message,
                     attachment_list
                 ):
+                    stream_count += 1
                     full_response += chunk
                     # Update the last message in history with accumulated response
                     history[-1] = (message, full_response)
+                    
+                    # Log streaming progress periodically
+                    if stream_count % 10 == 0:
+                        logger.debug(f"Streamed {stream_count} chunks, total length: {len(full_response)}")
                     
                     # Check if we have prospects to display
                     status = self.orchestrator.get_conversation_status(self.current_conversation_id)
@@ -265,6 +279,9 @@ class WebInterface:
                         yield history, self._get_conversation_status(), table_data, True
                     else:
                         yield history, self._get_conversation_status(), [], False
+                
+                # Log final streaming stats
+                logger.info(f"Streaming completed - Total chunks: {stream_count}, Response length: {len(full_response)}")
             else:
                 # Direct agent interaction (non-streaming for now)
                 response = await self._process_direct_agent_message(
@@ -283,6 +300,99 @@ class WebInterface:
             else:
                 history.append((message, error_response))
             yield history, "Error occurred", [], False
+    
+    async def process_message_non_stream(
+        self,
+        message: str,
+        history: List[Tuple[str, str]],
+        agent_type: str,
+        attachments: Optional[List[str]] = None
+    ) -> Tuple[List[Tuple[str, str]], str, List[List[str]], bool]:
+        """Process a user message without streaming - fallback for Cloud Run.
+        
+        Returns (history, status, prospect_table_data, prospect_table_visible) tuple.
+        """
+        
+        try:
+            # Start conversation if needed
+            if not self.current_conversation_id:
+                await self.start_new_conversation()
+            
+            # Add user message to history
+            history.append((message, "Processing..."))
+            
+            # Process attachments if any
+            attachment_list = []
+            if attachments:
+                for attachment in attachments:
+                    attachment_list.append({
+                        "type": "url",
+                        "url": attachment
+                    })
+            
+            # Process message based on agent type
+            if agent_type == "Main Workflow":
+                # Get full response without streaming
+                response = await self.orchestrator.process_user_message(
+                    self.current_conversation_id,
+                    message,
+                    attachment_list
+                )
+                
+                # Update history with complete response
+                history[-1] = (message, response)
+                
+                # Check if we have prospects to display
+                status = self.orchestrator.get_conversation_status(self.current_conversation_id)
+                if status and status.get('current_step') == 'prospect_review' and status.get('prospect_count', 0) > 0:
+                    # Get prospects from orchestrator
+                    conversation = self.orchestrator.conversations.get(self.current_conversation_id)
+                    if conversation and hasattr(conversation, 'current_prospects'):
+                        # Get prospect details
+                        prospect_ids = conversation.current_prospects
+                        if prospect_ids and self.orchestrator.prospect_agent.active_prospects:
+                            prospects = []
+                            for pid in prospect_ids[:10]:  # Top 10
+                                if pid in self.orchestrator.prospect_agent.active_prospects:
+                                    prospect = self.orchestrator.prospect_agent.active_prospects[pid]
+                                    prospects.append(prospect.model_dump())
+                            
+                            if prospects:
+                                self.current_prospects = prospects
+                                table_data = self._format_prospects_for_dataframe(prospects)
+                                
+                                # Add prospect table summary to chat
+                                table_summary = f"\n\n📊 **Found {len(prospects)} prospects - see table below for details**"
+                                if table_summary not in response:
+                                    response += table_summary
+                                    history[-1] = (message, response)
+                                
+                                return history, self._get_conversation_status(), table_data, True
+                
+                # Keep table visible if we have prospects
+                if self.current_prospects and status.get('current_step') in ['prospect_review', 'final_approval']:
+                    table_data = self._format_prospects_for_dataframe(self.current_prospects)
+                    return history, self._get_conversation_status(), table_data, True
+                else:
+                    return history, self._get_conversation_status(), [], False
+            else:
+                # Direct agent interaction
+                response = await self._process_direct_agent_message(
+                    agent_type,
+                    message,
+                    attachment_list
+                )
+                history[-1] = (message, response)
+                return history, self._get_conversation_status(), [], False
+                
+        except Exception as e:
+            logger.error(f"Error processing message non-stream: {str(e)}")
+            error_response = f"❌ Error: {str(e)}"
+            if history and history[-1][1] in ["", "Processing..."]:
+                history[-1] = (history[-1][0], error_response)
+            else:
+                history.append((message, error_response))
+            return history, "Error occurred", [], False
     
     def _get_conversation_status(self) -> str:
         """Get current conversation status."""
@@ -634,23 +744,47 @@ def create_interface(web_interface=None, deployment_mode="local"):
             if urls_in_message and not attachments:
                 attachments = urls_in_message
             
-            # Process message with streaming
+            # Process message with streaming or non-streaming based on deployment
             try:
-                async for updated_history, new_status, table_data, table_visible in web_interface.process_message_stream(
-                    message,
-                    chat_history,
-                    agent,
-                    attachments
-                ):
+                # Check deployment mode using environment variable directly for reliability
+                deployment_mode = os.environ.get("DEPLOYMENT_MODE", "local").lower()
+                logger.info(f"Processing message - Deployment mode: {deployment_mode}, is_cloud_run: {deployment_mode == 'cloud_run'}")
+                
+                if deployment_mode == "cloud_run":
+                    # Use non-streaming mode for Cloud Run
+                    logger.info("Using non-streaming mode for Cloud Run deployment")
+                    updated_history, new_status, table_data, table_visible = await web_interface.process_message_non_stream(
+                        message,
+                        chat_history,
+                        agent,
+                        attachments
+                    )
                     if table_visible and table_data:
-                        # Ensure table data is properly formatted
                         yield updated_history, new_status, gr.update(value=table_data, visible=True)
                     else:
-                        # Keep table hidden if no data
                         yield updated_history, new_status, gr.update(visible=False)
+                else:
+                    # Use streaming mode for local deployment
+                    async for updated_history, new_status, table_data, table_visible in web_interface.process_message_stream(
+                        message,
+                        chat_history,
+                        agent,
+                        attachments
+                    ):
+                        if table_visible and table_data:
+                            # Ensure table data is properly formatted
+                            yield updated_history, new_status, gr.update(value=table_data, visible=True)
+                        else:
+                            # Keep table hidden if no data
+                            yield updated_history, new_status, gr.update(visible=False)
             except Exception as e:
-                logger.error(f"Error in respond handler: {str(e)}")
-                yield chat_history, f"Error: {str(e)}", gr.update(visible=False)
+                logger.error(f"Error in respond handler: {str(e)}", exc_info=True)
+                error_msg = f"Error: {str(e)}"
+                if chat_history and chat_history[-1][1] is None:
+                    chat_history[-1] = (chat_history[-1][0], error_msg)
+                else:
+                    chat_history.append((message, error_msg))
+                yield chat_history, error_msg, gr.update(visible=False)
         
         # Submit handlers
         msg.submit(
@@ -783,6 +917,9 @@ def run_cloud_server():
     from fastapi import FastAPI
     import uvicorn
     import gradio as gr
+    
+    # Set deployment mode for Cloud Run
+    os.environ["DEPLOYMENT_MODE"] = "cloud_run"
     
     logger.info("Starting ADK Multi-Agent Sales System for Cloud Run")
     

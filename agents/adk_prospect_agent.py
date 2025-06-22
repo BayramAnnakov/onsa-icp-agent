@@ -203,13 +203,22 @@ class ADKProspectAgent(ADKAgent):
                 )
                 search_tasks.append(("exa", exa_task))
             
-            # Execute all search tasks in parallel
+            # Execute all search tasks in parallel with timeout
             if search_tasks:
                 self.logger.info(f"Executing {len(search_tasks)} search tasks in parallel")
-                task_results = await asyncio.gather(
-                    *[task for _, task in search_tasks],
-                    return_exceptions=True
-                )
+                
+                # Add timeout for API calls (30 seconds per task)
+                try:
+                    task_results = await asyncio.wait_for(
+                        asyncio.gather(
+                            *[task for _, task in search_tasks],
+                            return_exceptions=True
+                        ),
+                        timeout=min(60.0, 30.0 * len(search_tasks))  # Max 60 seconds total
+                    )
+                except asyncio.TimeoutError:
+                    self.logger.error(f"Search tasks timed out after {30.0 * len(search_tasks)} seconds")
+                    task_results = []
                 
                 # Process results
                 all_prospects = []
@@ -217,13 +226,16 @@ class ADKProspectAgent(ADKAgent):
                 people_found = []
                 
                 for i, (source_name, _) in enumerate(search_tasks):
-                    result = task_results[i]
-                    if isinstance(result, Exception):
-                        self.logger.error(f"Error in {source_name} search: {str(result)}")
-                    elif isinstance(result, dict) and result.get("status") == "success":
-                        people_found.extend(result.get("people", []))
-                        companies_found.extend(result.get("companies", []))
-                        self.logger.info(f"{source_name} found {len(result.get('people', []))} people")
+                    if i < len(task_results):
+                        result = task_results[i]
+                        if isinstance(result, Exception):
+                            self.logger.error(f"Error in {source_name} search: {type(result).__name__}: {str(result)}")
+                        elif isinstance(result, dict) and result.get("status") == "success":
+                            people_found.extend(result.get("people", []))
+                            companies_found.extend(result.get("companies", []))
+                            self.logger.info(f"{source_name} found {len(result.get('people', []))} people")
+                        else:
+                            self.logger.warning(f"{source_name} returned unexpected result: {result}")
             else:
                 self.logger.warning("No search tasks to execute")
                 all_prospects = []
@@ -783,6 +795,15 @@ Scoring guide: Perfect matches 0.9-1.0, good matches 0.7-0.8, okay matches 0.5-0
                 
                 # Extract JSON from response (handle explanatory text before JSON)
                 json_str = self._extract_json_from_response(batch_response)
+                if not json_str:
+                    self.logger.warning(f"No JSON found in batch response: {batch_response[:200]}...")
+                    raise ValueError("No valid JSON found in LLM response")
+                
+                # Validate JSON before parsing
+                if not (json_str.strip().startswith('[') or json_str.strip().startswith('{')):
+                    self.logger.error(f"Invalid JSON format, does not start with [ or {{: {json_str[:100]}...")
+                    raise ValueError("Invalid JSON format in response")
+                    
                 scores_data = json.loads(json_str)
                 
                 # Apply scores to prospects
@@ -790,11 +811,21 @@ Scoring guide: Perfect matches 0.9-1.0, good matches 0.7-0.8, okay matches 0.5-0
                 for i, prospect in enumerate(prospects):
                     if i < len(scores_data):
                         score_info = scores_data[i]
+                        # Ensure scores don't exceed 1.0 (validation fix)
+                        total_score = min(1.0, max(0.0, score_info.get("total_score", 0.5)))
+                        company_score = min(1.0, max(0.0, score_info.get("company_match_score", 0.5)))
+                        person_score = min(1.0, max(0.0, score_info.get("person_match_score", 0.5)))
+                        
+                        # Fix any criteria scores that exceed 1.0
+                        criteria_scores = {}
+                        for criterion, score in score_info.get("criteria_scores", {}).items():
+                            criteria_scores[criterion] = min(1.0, max(0.0, score))
+                        
                         prospect.score = ProspectScore(
-                            total_score=score_info.get("total_score", 0.5),
-                            company_match_score=score_info.get("company_match_score", 0.5),
-                            person_match_score=score_info.get("person_match_score", 0.5),
-                            criteria_scores=score_info.get("criteria_scores", {}),
+                            total_score=total_score,
+                            company_match_score=company_score,
+                            person_match_score=person_score,
+                            criteria_scores=criteria_scores,
                             score_explanation=score_info.get("reasoning", "")
                         )
                     else:
@@ -822,8 +853,19 @@ Scoring guide: Perfect matches 0.9-1.0, good matches 0.7-0.8, okay matches 0.5-0
                 }
                 
             except json.JSONDecodeError as e:
-                self.logger.error(f"JSON parsing failed in batch scoring - Error: {str(e)} - Raw_Response: {batch_response[:500]} - Extracted_JSON: {json_str[:200]}")
-                return {"status": "error", "error_message": f"JSON parsing failed: {str(e)}"}
+                self.logger.error(f"JSON parsing failed in batch scoring - Error: {str(e)}")
+                # Try fallback scoring for all prospects
+                scored_prospects = []
+                for prospect in prospects:
+                    prospect.score = self._fallback_scoring(prospect, icp_criteria)
+                    prospect_dict = prospect.model_dump() if hasattr(prospect, 'model_dump') else prospect.__dict__
+                    scored_prospects.append(prospect_dict)
+                
+                self.logger.info(f"Used fallback scoring for {len(scored_prospects)} prospects")
+                return {
+                    "status": "success",
+                    "scored_prospects": scored_prospects
+                }
             except Exception as e:
                 self.logger.error(f"Unexpected error in batch scoring - Error: {str(e)}")
                 return {"status": "error", "error_message": str(e)}
@@ -884,21 +926,41 @@ Scoring guide: Perfect matches 0.9-1.0, good matches 0.7-0.8, okay matches 0.5-0
                     else:
                         self.logger.warning(f"Could not find industry URN for '{industry_name}'")
             
-            # If no AI/ML specific URNs found, use broader tech search
-            if not industry_urns and any(ind in ["Artificial Intelligence", "Machine Learning", "AI", "ML"] for ind in industries):
-                self.logger.info("No AI/ML industry URNs found, falling back to technology/software search")
-                # Try broader technology categories
-                fallback_industries = ["Technology", "Software", "Computer Software", "Information Technology"]
-                for industry_name in fallback_industries[:2]:
-                    try:
-                        result = await asyncio.to_thread(hdw_client.search_industries, name=industry_name, count=1)
-                        if result:
-                            industry_urn = f"urn:li:industry:{result[0].urn.value}"
-                            industry_urns.append(industry_urn)
-                            self.logger.info(f"Found fallback industry URN for '{industry_name}': {industry_urn}")
-                            break
-                    except Exception as e:
-                        self.logger.debug(f"Failed to find fallback industry '{industry_name}': {e}")
+            # If no specific industry URNs found, use LLM to suggest broader categories
+            if not industry_urns and industries:
+                self.logger.info(f"No industry URNs found for {industries[:2]}, asking LLM for broader categories")
+                
+                # Use LLM to suggest broader industry categories
+                broader_industries = await self._get_broader_industries(industries[:2])
+                
+                if broader_industries:
+                    self.logger.info(f"LLM suggested broader industries: {broader_industries}")
+                    
+                    # Try to find URNs for broader industries
+                    for industry_name in broader_industries[:2]:
+                        try:
+                            result = await asyncio.to_thread(hdw_client.search_industries, name=industry_name, count=1)
+                            if result:
+                                industry_urn = f"urn:li:industry:{result[0].urn.value}"
+                                industry_urns.append(industry_urn)
+                                self.logger.info(f"Found fallback industry URN for '{industry_name}': {industry_urn}")
+                                break
+                        except Exception as e:
+                            self.logger.debug(f"Failed to find fallback industry '{industry_name}': {e}")
+                else:
+                    # Final fallback to generic categories
+                    self.logger.info("Using generic industry fallbacks")
+                    generic_fallbacks = ["Technology", "Business Services", "Professional Services"]
+                    for industry_name in generic_fallbacks[:2]:
+                        try:
+                            result = await asyncio.to_thread(hdw_client.search_industries, name=industry_name, count=1)
+                            if result:
+                                industry_urn = f"urn:li:industry:{result[0].urn.value}"
+                                industry_urns.append(industry_urn)
+                                self.logger.info(f"Found generic fallback URN for '{industry_name}': {industry_urn}")
+                                break
+                        except Exception as e:
+                            self.logger.debug(f"Failed to find generic fallback '{industry_name}': {e}")
             
             # Search for location URNs if needed
             location_urns = None
@@ -934,10 +996,11 @@ Scoring guide: Perfect matches 0.9-1.0, good matches 0.7-0.8, okay matches 0.5-0
             # Search people using HDW
             keywords = " ".join(target_roles[:2]) if target_roles else "Sales Executive"
             
-            # Enhance keywords for AI/ML search if relevant
-            if any(ind in ["Artificial Intelligence", "Machine Learning", "AI", "ML", "LLM", "GenAI"] for ind in industries):
-                keywords = f"{keywords} AI ML artificial intelligence machine learning"
-                self.logger.info(f"Enhanced search keywords for AI/ML: {keywords}")
+            # Enhance keywords based on industries for better search results
+            enhanced_keywords = await self._enhance_search_keywords(keywords, industries)
+            if enhanced_keywords != keywords:
+                self.logger.info(f"Enhanced search keywords: {keywords} → {enhanced_keywords}")
+                keywords = enhanced_keywords
             
             try:
                 users = await asyncio.to_thread(
@@ -1063,13 +1126,20 @@ Scoring guide: Perfect matches 0.9-1.0, good matches 0.7-0.8, okay matches 0.5-0
                 {"description": "Professional background and expertise", "format": "text"}
             ]
             
-            # Extract people using Exa
-            exa_people = await asyncio.to_thread(
-                extractor.extract_people,
-                search_query=search_query,
-                enrichments=enrichments,
-                count=min(search_limit, 20)
-            )
+            # Extract people using Exa with timeout
+            try:
+                exa_people = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        extractor.extract_people,
+                        search_query=search_query,
+                        enrichments=enrichments,
+                        count=min(search_limit, 20)
+                    ),
+                    timeout=30.0
+                )
+            except asyncio.TimeoutError:
+                self.logger.error("Exa search timed out after 30 seconds")
+                exa_people = []
             
             self.logger.info(f"Found {len(exa_people)} people via Exa")
             
@@ -1425,6 +1495,116 @@ Scoring guide: Perfect matches 0.9-1.0, good matches 0.7-0.8, okay matches 0.5-0
             self.logger.warning(f"LLM extraction failed, returning empty refinements: {str(e)}")
             # Return empty refinements if LLM fails
             return {"refined_criteria": {}, "scoring_adjustments": {}, "search_modifications": {}}
+    
+    async def _get_broader_industries(self, specific_industries: List[str]) -> List[str]:
+        """Use LLM to suggest broader industry categories when specific ones aren't found.
+        
+        Args:
+            specific_industries: List of specific industries that weren't found
+            
+        Returns:
+            List of broader industry categories to try
+        """
+        try:
+            prompt = f"""
+            The following specific industries could not be found in the industry database:
+            {', '.join(specific_industries)}
+            
+            Suggest 2-3 broader, more general industry categories that would encompass these specific industries.
+            For example:
+            - "Artificial Intelligence" → "Technology", "Software"
+            - "Biotech" → "Healthcare", "Life Sciences"
+            - "FinTech" → "Financial Services", "Technology"
+            - "EdTech" → "Education", "Technology"
+            - "Clean Energy" → "Energy", "Environmental Services"
+            
+            Return ONLY a JSON array of broader industry names that are likely to exist in LinkedIn's industry database:
+            ["Industry 1", "Industry 2", "Industry 3"]
+            """
+            
+            # Use process_json_request to get suggestions
+            response = await self.process_json_request(prompt)
+            
+            # Extract JSON from response
+            json_str = self._extract_json_from_response(response)
+            if json_str and json_str.strip().startswith('['):
+                broader_industries = json.loads(json_str)
+                # Ensure we have a list of strings
+                if isinstance(broader_industries, list) and all(isinstance(i, str) for i in broader_industries):
+                    return broader_industries[:3]  # Limit to 3 suggestions
+            
+            self.logger.warning(f"Failed to parse LLM suggestions, using defaults")
+            
+        except Exception as e:
+            self.logger.error(f"Error getting broader industries from LLM: {str(e)}")
+        
+        # Fallback to common broader categories based on patterns
+        fallback_map = {
+            "ai": ["Technology", "Software", "Computer Software"],
+            "tech": ["Technology", "Information Technology", "Software"],
+            "bio": ["Healthcare", "Biotechnology", "Pharmaceuticals"],
+            "fin": ["Financial Services", "Banking", "Investment Management"],
+            "energy": ["Energy", "Oil & Energy", "Renewables & Environment"],
+            "retail": ["Retail", "Consumer Goods", "E-commerce"],
+            "consulting": ["Management Consulting", "Professional Services", "Business Services"]
+        }
+        
+        # Check if any specific industry matches known patterns
+        for industry in specific_industries:
+            industry_lower = industry.lower()
+            for pattern, fallbacks in fallback_map.items():
+                if pattern in industry_lower:
+                    return fallbacks
+        
+        # Generic fallback
+        return ["Technology", "Professional Services", "Business Services"]
+    
+    async def _enhance_search_keywords(self, base_keywords: str, industries: List[str]) -> str:
+        """Use LLM to enhance search keywords based on target industries.
+        
+        Args:
+            base_keywords: Base keywords (usually job titles)
+            industries: Target industries
+            
+        Returns:
+            Enhanced keywords string
+        """
+        if not industries:
+            return base_keywords
+            
+        try:
+            prompt = f"""
+            Enhance these search keywords for finding people in specific industries.
+            
+            Base keywords: {base_keywords}
+            Target industries: {', '.join(industries[:3])}
+            
+            Add 2-4 relevant industry-specific terms that would help find the right people.
+            For example:
+            - For AI/ML industries: add "AI ML artificial intelligence machine learning"
+            - For FinTech: add "fintech payments blockchain digital banking"
+            - For Healthcare: add "healthcare medical clinical patient care"
+            - For E-commerce: add "ecommerce online retail marketplace"
+            
+            Return ONLY the enhanced keyword string (base keywords + additional terms).
+            Keep it concise - maximum 10 words total.
+            """
+            
+            response = await self.process_message(prompt)
+            
+            # Clean up response - remove quotes, extra whitespace
+            enhanced = response.strip().strip('"').strip("'").strip()
+            
+            # Validate it's reasonable (not too long, contains base keywords)
+            if len(enhanced.split()) <= 15 and (base_keywords.lower() in enhanced.lower() or not base_keywords):
+                return enhanced
+            else:
+                self.logger.warning(f"LLM returned invalid enhanced keywords, using base")
+                return base_keywords
+                
+        except Exception as e:
+            self.logger.error(f"Error enhancing keywords: {str(e)}")
+            return base_keywords
     
     async def _calculate_llm_similarity_adjustment(
         self,

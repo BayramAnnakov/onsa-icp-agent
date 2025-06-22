@@ -30,6 +30,7 @@ RUN mkdir -p cache logs sessions data
 
 # Set appropriate permissions
 RUN chmod +x main.py
+RUN chmod +x scripts/cloud_run_entrypoint.sh
 
 # Expose port
 EXPOSE $PORT
@@ -38,5 +39,5 @@ EXPOSE $PORT
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:$PORT/health || exit 1
 
-# Run the application
-CMD ["python", "web_interface.py"]
+# Run the application using the entrypoint script
+CMD ["./scripts/cloud_run_entrypoint.sh"]
