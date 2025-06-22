@@ -10,6 +10,7 @@ A sophisticated multi-agent system built with Google ADK (Agent Development Kit)
 - **Enhanced Search**: Incorporates buying signals, pain points, and company characteristics
 - **Caching Strategy**: Efficient API usage with intelligent caching for expensive endpoints
 - **Modular Architecture**: Selective tool loading for each agent based on requirements
+- **A2A Protocol Support**: Standardized agent-to-agent communication protocol with REST API and WebSocket
 
 ## 🏗️ Architecture
 
@@ -119,6 +120,40 @@ The interface will be available at: `http://localhost:7860`
 - **Session Management**: Save and load conversations
 - **Export Results**: Download in Markdown or JSON format
 - **Real-time Progress**: See what agents are doing with streaming responses
+
+### A2A Protocol Server
+
+The system now includes an A2A (Agent-to-Agent) protocol server for programmatic access:
+
+```bash
+# Start the A2A server
+python start_a2a_server.py
+```
+
+The A2A server will be available at: `http://localhost:8080`
+
+#### A2A Features:
+- **Agent Discovery**: Find available agents and their capabilities
+- **OpenAPI Specs**: Auto-generated API documentation for each agent
+- **RESTful API**: Standard HTTP endpoints for all agent operations
+- **WebSocket Support**: Real-time bidirectional communication
+- **Async Task Execution**: Long-running operations with status tracking
+
+#### Example A2A Usage:
+
+```python
+# Discover agents
+curl -X POST http://localhost:8080/a2a/discovery \
+  -H "Content-Type: application/json" \
+  -d '{"include_capabilities": true}'
+
+# Execute a capability
+curl -X POST http://localhost:8080/agents/{agent_id}/capabilities/search_companies_hdw \
+  -H "Content-Type: application/json" \
+  -d '{"query": "fintech startups", "limit": 10}'
+```
+
+See [A2A Protocol Documentation](docs/A2A_PROTOCOL.md) for detailed information.
 
 ### Command Line Usage
 

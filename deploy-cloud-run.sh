@@ -64,6 +64,7 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
     --role=roles/aiplatform.user
 
 echo "4️⃣ Building Docker image..."
+echo "   Using unified deployment (DEPLOYMENT_MODE=cloud_run is set in Dockerfile)"
 docker build -t $IMAGE_NAME .
 
 echo "5️⃣ Pushing image to Container Registry..."

@@ -1249,6 +1249,174 @@ Always check memory first when the user references past work or asks about previ
                 agent_action=agent_action
             )
     
+    # A2A Protocol Support
+    
+    def get_openapi_spec(self) -> Dict[str, Any]:
+        """Generate OpenAPI specification for agent capabilities.
+        
+        Returns:
+            OpenAPI 3.0 specification as a dictionary
+        """
+        from protocols.a2a_protocol import Capability
+        
+        spec = {
+            "openapi": "3.0.0",
+            "info": {
+                "title": f"{self.agent_name} API",
+                "description": self.agent_description,
+                "version": "1.0.0"
+            },
+            "servers": [
+                {
+                    "url": f"/agents/{self.agent_name}",
+                    "description": f"{self.agent_name} endpoint"
+                }
+            ],
+            "paths": {}
+        }
+        
+        # Generate paths for each capability
+        for capability_name in self.get_capabilities():
+            path = f"/capabilities/{capability_name}"
+            
+            # Get tool metadata if available
+            tool_metadata = getattr(self, 'tool_metadata', {}).get(capability_name, {})
+            
+            spec["paths"][path] = {
+                "post": {
+                    "summary": capability_name,
+                    "description": tool_metadata.get('description', f"Execute {capability_name}"),
+                    "operationId": capability_name,
+                    "tags": [self.agent_name],
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": self._get_capability_schema(capability_name)
+                                }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Successful response",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "status": {"type": "string"},
+                                            "result": {"type": "object"}
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "400": {
+                            "description": "Bad request"
+                        },
+                        "500": {
+                            "description": "Internal server error"
+                        }
+                    }
+                }
+            }
+        
+        return spec
+    
+    def _get_capability_schema(self, capability_name: str) -> Dict[str, Any]:
+        """Get parameter schema for a capability.
+        
+        Args:
+            capability_name: Name of the capability
+            
+        Returns:
+            Schema properties dictionary
+        """
+        schema_props = {}
+        
+        # Try to find the tool function and extract parameters
+        for tool in self.tools:
+            if hasattr(tool, 'func') and tool.func.__name__ == capability_name:
+                import inspect
+                sig = inspect.signature(tool.func)
+                
+                for param_name, param in sig.parameters.items():
+                    if param_name == 'self':
+                        continue
+                    
+                    # Basic type mapping
+                    param_schema = {"type": "string"}  # Default
+                    
+                    if param.annotation != inspect.Parameter.empty:
+                        annotation_str = str(param.annotation)
+                        if 'int' in annotation_str:
+                            param_schema = {"type": "integer"}
+                        elif 'float' in annotation_str:
+                            param_schema = {"type": "number"}
+                        elif 'bool' in annotation_str:
+                            param_schema = {"type": "boolean"}
+                        elif 'List' in annotation_str:
+                            param_schema = {"type": "array", "items": {"type": "string"}}
+                        elif 'Dict' in annotation_str:
+                            param_schema = {"type": "object"}
+                    
+                    schema_props[param_name] = param_schema
+                
+                break
+        
+        return schema_props
+    
+    async def handle_a2a_request(
+        self,
+        capability_name: str,
+        parameters: Dict[str, Any],
+        context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Handle an A2A protocol request.
+        
+        Args:
+            capability_name: Name of the capability to invoke
+            parameters: Parameters for the capability
+            context: Optional execution context
+            
+        Returns:
+            Result dictionary with status and data
+        """
+        try:
+            # Validate capability exists
+            if capability_name not in self.get_capabilities():
+                return {
+                    "status": "error",
+                    "error": f"Capability '{capability_name}' not found"
+                }
+            
+            # Find and execute the tool function
+            for tool in self.tools:
+                if hasattr(tool, 'func') and tool.func.__name__ == capability_name:
+                    # Execute the function
+                    result = await tool.func(**parameters)
+                    
+                    return {
+                        "status": "success",
+                        "result": result
+                    }
+            
+            # If we get here, the capability wasn't found in tools
+            return {
+                "status": "error",
+                "error": f"Tool function for '{capability_name}' not found"
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error handling A2A request - Capability: {capability_name}, Error: {str(e)}")
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+    
     # Abstract methods for subclasses
     
     @abstractmethod

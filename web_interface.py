@@ -434,15 +434,37 @@ class WebInterface:
             return f"❌ Error exporting: {str(e)}"
 
 
-def create_interface():
-    """Create the Gradio interface."""
+def create_interface(web_interface=None, deployment_mode="local"):
+    """Create the Gradio interface.
     
-    web_interface = WebInterface()
+    Args:
+        web_interface: Optional WebInterface instance. If None, creates a new one.
+        deployment_mode: Either "local" or "cloud_run" to control UI elements
+    """
     
-    with gr.Blocks(title="ADK Multi-Agent Sales System", theme=gr.themes.Soft()) as app:
+    if web_interface is None:
+        web_interface = WebInterface()
+    
+    # Adjust theme and CSS based on deployment
+    css = """
+    .gradio-container {
+        max-width: 1200px !important;
+    }
+    """ if deployment_mode == "cloud_run" else ""
+    
+    with gr.Blocks(
+        title="ADK Multi-Agent Sales System", 
+        theme=gr.themes.Soft(),
+        css=css
+    ) as app:
+        # Header with deployment mode indicator
+        deployment_badge = "☁️ Cloud Run" if deployment_mode == "cloud_run" else "💻 Local"
+        
         gr.Markdown(
-            """
+            f"""
             # 🎯 ADK Multi-Agent Sales Lead Generation System
+            
+            <div style='text-align: right; font-size: 0.9em; color: #666;'>{deployment_badge}</div>
             
             Test the main workflow and individual agents for ICP creation and prospect discovery.
             
@@ -541,7 +563,7 @@ def create_interface():
         # Event handlers
         async def respond(message, chat_history, agent, attach_text):
             if not message:
-                yield chat_history, status.value, gr.update()
+                yield chat_history, status.value, gr.update(visible=False)
                 return
             
             # Parse attachments
@@ -558,16 +580,22 @@ def create_interface():
                 attachments = urls_in_message
             
             # Process message with streaming
-            async for updated_history, new_status, table_data, table_visible in web_interface.process_message_stream(
-                message,
-                chat_history,
-                agent,
-                attachments
-            ):
-                if table_visible and table_data:
-                    yield updated_history, new_status, gr.update(value=table_data, visible=True)
-                else:
-                    yield updated_history, new_status, gr.update()
+            try:
+                async for updated_history, new_status, table_data, table_visible in web_interface.process_message_stream(
+                    message,
+                    chat_history,
+                    agent,
+                    attachments
+                ):
+                    if table_visible and table_data:
+                        # Ensure table data is properly formatted
+                        yield updated_history, new_status, gr.update(value=table_data, visible=True)
+                    else:
+                        # Keep table hidden if no data
+                        yield updated_history, new_status, gr.update(visible=False)
+            except Exception as e:
+                logger.error(f"Error in respond handler: {str(e)}")
+                yield chat_history, f"Error: {str(e)}", gr.update(visible=False)
         
         # Submit handlers
         msg.submit(
@@ -641,7 +669,31 @@ def create_interface():
     return app
 
 
-if __name__ == "__main__":
+def create_app_for_deployment(deployment_mode="local"):
+    """Create app configured for specific deployment mode.
+    
+    Args:
+        deployment_mode: Either "local" or "cloud_run"
+        
+    Returns:
+        Gradio app configured for the deployment mode
+    """
+    # Create web interface instance once
+    web_interface = WebInterface()
+    
+    # Create Gradio app with deployment-specific configuration
+    app = create_interface(web_interface=web_interface, deployment_mode=deployment_mode)
+    
+    if deployment_mode == "cloud_run":
+        # For Cloud Run, we'll return the app to be mounted on FastAPI
+        return app, web_interface
+    else:
+        # For local deployment, return just the app
+        return app
+
+
+def run_local_server():
+    """Run the web interface locally."""
     import os
     
     print("Starting ADK Multi-Agent Web Interface...")
@@ -652,7 +704,7 @@ if __name__ == "__main__":
     host = os.environ.get("HOST", "0.0.0.0")
     
     try:
-        app = create_interface()
+        app = create_app_for_deployment("local")
         print("\n✅ Web interface ready!")
         print(f"🌐 Opening at http://{host}:{port}")
         print("\nPress Ctrl+C to stop the server\n")
@@ -668,3 +720,67 @@ if __name__ == "__main__":
         print(f"\n❌ Error starting web interface: {str(e)}")
         print("📄 Check logs for more details")
         raise
+
+
+def run_cloud_server():
+    """Run the web interface for Cloud Run with FastAPI."""
+    import os
+    from fastapi import FastAPI
+    import uvicorn
+    import gradio as gr
+    
+    logger.info("Starting ADK Multi-Agent Sales System for Cloud Run")
+    
+    # Create FastAPI app
+    fastapi_app = FastAPI(title="ADK Sales System")
+    
+    # Add health check endpoint
+    @fastapi_app.get("/health")
+    async def health_check():
+        return {
+            "status": "healthy",
+            "service": "adk-sales-system",
+            "version": "1.0.0",
+            "apis": {
+                "google": bool(os.getenv("GOOGLE_API_KEY")),
+                "hdw": bool(os.getenv("HDW_API_TOKEN")),
+                "exa": bool(os.getenv("EXA_API_KEY")),
+                "firecrawl": bool(os.getenv("FIRECRAWL_API_KEY"))
+            }
+        }
+    
+    # Add root endpoint
+    @fastapi_app.get("/")
+    async def root():
+        return {"message": "ADK Sales System - Access the UI at /gradio"}
+    
+    # Create Gradio app for Cloud Run
+    gradio_app, _ = create_app_for_deployment("cloud_run")
+    
+    # Mount Gradio app on the FastAPI app
+    app = gr.mount_gradio_app(fastapi_app, gradio_app, path="/gradio")
+    
+    # Get host and port
+    host = os.environ.get("HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", 8080))
+    
+    # Run with uvicorn
+    logger.info(f"Starting FastAPI server on {host}:{port}")
+    uvicorn.run(
+        app,
+        host=host,
+        port=port,
+        log_level="info"
+    )
+
+
+if __name__ == "__main__":
+    import os
+    
+    # Check deployment mode
+    deployment_mode = os.environ.get("DEPLOYMENT_MODE", "local").lower()
+    
+    if deployment_mode == "cloud_run":
+        run_cloud_server()
+    else:
+        run_local_server()
