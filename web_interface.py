@@ -642,18 +642,24 @@ def create_interface():
 
 
 if __name__ == "__main__":
+    import os
+    
     print("Starting ADK Multi-Agent Web Interface...")
     print("Loading configuration...")
+    
+    # Get port from environment or default
+    port = int(os.environ.get("PORT", 7860))
+    host = os.environ.get("HOST", "0.0.0.0")
     
     try:
         app = create_interface()
         print("\n✅ Web interface ready!")
-        print("🌐 Opening at http://localhost:7860")
+        print(f"🌐 Opening at http://{host}:{port}")
         print("\nPress Ctrl+C to stop the server\n")
         
         app.launch(
-            server_name="0.0.0.0",
-            server_port=7860,
+            server_name=host,
+            server_port=port,
             share=False,
             show_error=True
         )
