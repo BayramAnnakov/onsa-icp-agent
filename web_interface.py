@@ -262,23 +262,12 @@ class WebInterface:
                                 
                                 if prospects:
                                     self.current_prospects = prospects
-                                    table_data = self._format_prospects_for_dataframe(prospects)
-                                    
-                                    # Add prospect table summary to chat
-                                    table_summary = f"\n\n📊 **Found {len(prospects)} prospects - see table below for details**"
-                                    if table_summary not in full_response:
-                                        full_response += table_summary
-                                        history[-1] = (message, full_response)
-                                    
-                                    yield history, self._get_conversation_status(), table_data, True
+                                    # Don't add table summary - prospects are shown in chat message
+                                    yield history, self._get_conversation_status(), [], False
                                     continue
                     
-                    # Keep table visible if we have prospects
-                    if self.current_prospects and status.get('current_step') in ['prospect_review', 'final_approval']:
-                        table_data = self._format_prospects_for_dataframe(self.current_prospects)
-                        yield history, self._get_conversation_status(), table_data, True
-                    else:
-                        yield history, self._get_conversation_status(), [], False
+                    # Always keep table hidden - prospects are shown in chat
+                    yield history, self._get_conversation_status(), [], False
                 
                 # Log final streaming stats
                 logger.info(f"Streaming completed - Total chunks: {stream_count}, Response length: {len(full_response)}")
@@ -359,22 +348,11 @@ class WebInterface:
                             
                             if prospects:
                                 self.current_prospects = prospects
-                                table_data = self._format_prospects_for_dataframe(prospects)
-                                
-                                # Add prospect table summary to chat
-                                table_summary = f"\n\n📊 **Found {len(prospects)} prospects - see table below for details**"
-                                if table_summary not in response:
-                                    response += table_summary
-                                    history[-1] = (message, response)
-                                
-                                return history, self._get_conversation_status(), table_data, True
+                                # Don't show table - prospects are in chat message
+                                return history, self._get_conversation_status(), [], False
                 
-                # Keep table visible if we have prospects
-                if self.current_prospects and status.get('current_step') in ['prospect_review', 'final_approval']:
-                    table_data = self._format_prospects_for_dataframe(self.current_prospects)
-                    return history, self._get_conversation_status(), table_data, True
-                else:
-                    return history, self._get_conversation_status(), [], False
+                # Always keep table hidden - prospects are shown in chat
+                return history, self._get_conversation_status(), [], False
             else:
                 # Direct agent interaction
                 response = await self._process_direct_agent_message(
@@ -759,10 +737,8 @@ def create_interface(web_interface=None, deployment_mode="local"):
                         agent,
                         attachments
                     )
-                    if table_visible and table_data:
-                        yield updated_history, new_status, gr.update(value=table_data, visible=True)
-                    else:
-                        yield updated_history, new_status, gr.update(visible=False)
+                    # Always keep table hidden - prospects are shown in chat
+                    yield updated_history, new_status, gr.update(visible=False)
                 else:
                     # Use streaming mode for local deployment
                     async for updated_history, new_status, table_data, table_visible in web_interface.process_message_stream(
@@ -771,12 +747,8 @@ def create_interface(web_interface=None, deployment_mode="local"):
                         agent,
                         attachments
                     ):
-                        if table_visible and table_data:
-                            # Ensure table data is properly formatted
-                            yield updated_history, new_status, gr.update(value=table_data, visible=True)
-                        else:
-                            # Keep table hidden if no data
-                            yield updated_history, new_status, gr.update(visible=False)
+                        # Always keep table hidden - prospects are shown in chat
+                        yield updated_history, new_status, gr.update(visible=False)
             except Exception as e:
                 logger.error(f"Error in respond handler: {str(e)}", exc_info=True)
                 error_msg = f"Error: {str(e)}"
