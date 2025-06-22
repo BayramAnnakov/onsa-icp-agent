@@ -211,8 +211,9 @@ class WebInterface:
             if not self.current_conversation_id:
                 await self.start_new_conversation()
             
-            # Add user message to history
+            # Add user message to history with initial acknowledgment
             history.append((message, ""))
+            yield history, "Processing...", [], False
             
             # Process attachments if any
             attachment_list = []
@@ -709,6 +710,10 @@ def create_interface(web_interface=None, deployment_mode="local"):
                 yield chat_history, status.value, gr.update(visible=False)
                 return
             
+            # Immediately show user message in chat with processing indicator
+            chat_history.append((message, "🤖 Processing..."))
+            yield chat_history, "Agent is thinking...", gr.update(visible=False)
+            
             # Parse attachments
             attachments = []
             if attach_text:
@@ -724,6 +729,9 @@ def create_interface(web_interface=None, deployment_mode="local"):
             
             # Process message with streaming or non-streaming based on deployment
             try:
+                # Remove the temporary processing message before actual processing
+                chat_history = chat_history[:-1]
+                
                 # Check deployment mode using environment variable directly for reliability
                 deployment_mode = os.environ.get("DEPLOYMENT_MODE", "local").lower()
                 logger.info(f"Processing message - Deployment mode: {deployment_mode}, is_cloud_run: {deployment_mode == 'cloud_run'}")

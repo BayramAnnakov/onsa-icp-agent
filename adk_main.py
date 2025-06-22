@@ -166,6 +166,24 @@ You can also provide links to:
         intent = await self._analyze_user_intent(message, conversation, attachments)
         self.logger.info(f"Detected intent - Type: {intent['intent_type']}, Confidence: {intent['confidence']:.2f}")
         
+        # Provide intent-specific acknowledgment
+        intent_type = intent.get("intent_type", "unclear")
+        acknowledgments = {
+            "casual_greeting": "👋 Hello! Let me help you...\n\n",
+            "provide_business_info": "📊 Got it! Let me analyze your business information...\n\n",
+            "request_icp_creation": "🎯 Perfect! I'll create an Ideal Customer Profile for you...\n\n",
+            "find_prospects": "🔍 Great! I'll search for high-quality prospects matching your criteria...\n\n",
+            "memory_query": "💭 Let me check what we've worked on before...\n\n",
+            "ask_question": "💡 Good question! Let me explain...\n\n",
+            "faq_question": "📖 Let me answer that for you...\n\n",
+            "provide_feedback": "✍️ Thanks for the feedback! I'll incorporate your suggestions...\n\n",
+            "analyze_resource": "🌐 I'll analyze that resource for you...\n\n",
+            "navigate_workflow": "🧭 Let me help you navigate...\n\n"
+        }
+        
+        if intent_type in acknowledgments:
+            yield acknowledgments[intent_type]
+        
         # Collect full response for conversation history
         full_response = ""
         
@@ -182,6 +200,10 @@ You can also provide links to:
             elif intent_type == "provide_business_info":
                 # Check if we should process as business info
                 if conversation.current_step == WorkflowStep.BUSINESS_DESCRIPTION:
+                    yield "🔄 Processing your business details...\n"
+                    yield "   • Extracting key information...\n"
+                    yield "   • Analyzing business model...\n"
+                    yield "   • Researching market position...\n\n"
                     async for chunk in self._handle_business_description_stream(conversation, message, attachments or []):
                         full_response += chunk
                         yield chunk
@@ -198,6 +220,10 @@ You can also provide links to:
                 if website_urls and not conversation.business_info.get("description"):
                     # First do business research, then automatically create ICP
                     yield "🔍 I'll research your business first, then create the ICP...\n\n"
+                    yield "📋 Step 1: Business Analysis\n"
+                    yield "   • Fetching website content...\n"
+                    yield "   • Analyzing value proposition...\n"
+                    yield "   • Understanding target market...\n\n"
                     async for chunk in self._handle_business_description_stream(conversation, message, attachments or []):
                         full_response += chunk
                         yield chunk
@@ -206,6 +232,10 @@ You can also provide links to:
                     if conversation.business_info.get("description") or message:
                         if conversation.current_step != WorkflowStep.ICP_CREATION:
                             conversation.advance_step(WorkflowStep.ICP_CREATION)
+                        yield "🚀 Starting ICP creation process...\n"
+                        yield "   • Analyzing business requirements...\n"
+                        yield "   • Identifying key customer attributes...\n"
+                        yield "   • Building ideal customer profile...\n\n"
                         async for chunk in self._handle_icp_creation_stream(conversation, message, attachments or []):
                             full_response += chunk
                             yield chunk
@@ -219,6 +249,10 @@ You can also provide links to:
                 if conversation.current_icp_id:
                     if conversation.current_step not in [WorkflowStep.PROSPECT_SEARCH, WorkflowStep.PROSPECT_REVIEW]:
                         conversation.advance_step(WorkflowStep.PROSPECT_SEARCH)
+                    yield "🎯 Initiating prospect search...\n"
+                    yield "   • Loading your ICP criteria...\n"
+                    yield "   • Preparing search parameters...\n"
+                    yield "   • Connecting to data sources...\n\n"
                     async for chunk in self._handle_prospect_search_stream(conversation, message, attachments or []):
                         full_response += chunk
                         yield chunk
@@ -229,6 +263,18 @@ You can also provide links to:
             
             elif intent_type == "memory_query":
                 response = await self._handle_memory_query(conversation, message)
+                full_response = response
+                yield response
+            
+            elif intent_type == "ask_question":
+                response = await self._handle_question(conversation, message)
+                full_response = response
+                yield response
+            
+            elif intent_type == "faq_question":
+                # Get FAQ topic from intent if available
+                faq_topic = intent.get("detected_entities", {}).get("faq_topic", "general")
+                response = await self._handle_faq_question(conversation, message, faq_topic)
                 full_response = response
                 yield response
             
@@ -1645,7 +1691,8 @@ Is there anything else I can help you with today?
         7. navigate_workflow - Wanting to skip steps, go back, or start over
         8. memory_query - Asking about previous work or sessions
         9. analyze_resource - Wanting to analyze a website or document
-        10. unclear - Intent is ambiguous or unclear
+        10. faq_question - Common FAQ questions about the system, process, data sources, scoring, privacy, etc.
+        11. unclear - Intent is ambiguous or unclear
         
         Also determine:
         - Should we advance the workflow step?
@@ -1670,14 +1717,27 @@ Is there anything else I can help you with today?
         - "My company is X, now build an ICP" → request_icp_creation
         - "Find me some prospects" → find_prospects
         - "What can you do?" → ask_question
+        - "How does this work?" → faq_question (faq_topic: "how_it_works")
+        - "What is an ICP?" → faq_question (faq_topic: "what_is_icp")
+        - "How long does it take?" → faq_question (faq_topic: "timeline")
+        - "What data sources do you use?" → faq_question (faq_topic: "data_sources")
+        - "How does scoring work?" → faq_question (faq_topic: "scoring")
+        - "Is my data secure?" → faq_question (faq_topic: "privacy")
+        - "What do I need to get started?" → faq_question (faq_topic: "requirements")
+        - "Can I export the results?" → faq_question (faq_topic: "export")
+        - "How accurate is this?" → faq_question (faq_topic: "accuracy")
         - "refine ice: focus on startups" → provide_feedback (if ICP exists)
         - "change company size to <50 employees" → provide_feedback (if ICP exists)
         - "I don't like this ICP, modify it" → provide_feedback (if ICP exists)
         - "update the target criteria" → provide_feedback (if ICP exists)
         - "This ICP looks good, proceed" → provide_feedback (if ICP exists)
         
-        IMPORTANT: If a message contains both business information AND explicit ICP creation requests 
-        (like "create ICP", "build ICP", "let's create", "make an ICP"), prioritize "request_icp_creation".
+        IMPORTANT: 
+        - If a message contains both business information AND explicit ICP creation requests 
+          (like "create ICP", "build ICP", "let's create", "make an ICP"), prioritize "request_icp_creation".
+        - Distinguish between "ask_question" (custom questions) and "faq_question" (common questions about the system).
+        - For FAQ questions, also include a "faq_topic" field in detected_entities to specify the FAQ category.
+        - FAQ topics: "how_it_works", "what_is_icp", "data_sources", "scoring", "timeline", "requirements", "export", "accuracy", "privacy"
         """
         
         try:
@@ -1734,6 +1794,19 @@ Is there anything else I can help you with today?
                     "advance_workflow": True
                 }
             
+            # Check for questions
+            question_indicators = ["how", "what", "when", "where", "why", "can you", "could you", "do you", "does it", "is it"]
+            if (message_lower.endswith("?") or 
+                any(message_lower.startswith(word) for word in question_indicators) or
+                any(f" {word} " in f" {message_lower} " for word in ["how", "what", "when", "where", "why"])):
+                return {
+                    "intent_type": "ask_question",
+                    "confidence": 0.8,
+                    "reasoning": "Detected question pattern",
+                    "suggested_action": "answer_question",
+                    "advance_workflow": False
+                }
+            
             # Try enhanced fallback
             fallback_intent = await self._analyze_fallback_intent(message)
             if fallback_intent:
@@ -1785,6 +1858,11 @@ Is there anything else I can help you with today?
         
         elif intent_type == "ask_question":
             return await self._handle_question(conversation, message)
+        
+        elif intent_type == "faq_question":
+            # Get FAQ topic from intent if available
+            faq_topic = intent.get("detected_entities", {}).get("faq_topic", "general")
+            return await self._handle_faq_question(conversation, message, faq_topic)
         
         elif intent_type == "provide_feedback":
             # Route to appropriate refinement handler
@@ -1860,21 +1938,31 @@ How can I help?
             """.strip()
     
     async def _handle_question(self, conversation: Conversation, message: str) -> str:
-        """Handle general questions about capabilities or process."""
+        """Handle general questions about capabilities or process (non-FAQ custom questions)."""
         
-        # Use LLM to generate appropriate response
+        # Use LLM to generate appropriate response for custom questions
         question_prompt = f"""
-        The user is asking a question about our lead generation system.
+        The user is asking a custom question about our lead generation system.
+        Note: This is NOT a common FAQ question (those are handled separately).
         
         User question: "{message}"
         
         Context:
-        - We help create ICPs (Ideal Customer Profiles)
+        - We help create ICPs (Ideal Customer Profiles) using AI
         - We find prospects using HorizonDataWave (LinkedIn), Exa (web search), and Firecrawl (web scraping)
-        - We use AI to score and rank prospects
+        - We use Google AI to score and rank prospects
         - The process is: Business Description → ICP Creation → Prospect Search → Review
+        - Results can be exported in various formats
+        - The entire process takes 2-3 minutes
         
-        Provide a helpful, concise answer. Be friendly and informative.
+        Current conversation state:
+        - Has business info: {bool(conversation.business_info.get('description'))}
+        - Has ICP: {bool(conversation.current_icp_id)}
+        - Has prospects: {bool(conversation.current_prospects)}
+        
+        Provide a helpful, concise answer that is specific to their question.
+        Be friendly and informative. If the question is about their specific situation,
+        reference their current progress in the system.
         """
         
         try:
@@ -1882,16 +1970,161 @@ How can I help?
             return response
         except:
             return """
-I help businesses find their ideal customers through an AI-powered process:
+I can help you with various aspects of our lead generation system:
 
-1. **Understanding Your Business** - You tell me about your company
-2. **Creating an ICP** - I build a profile of your ideal customers
-3. **Finding Prospects** - I search multiple databases for matches
-4. **Scoring & Ranking** - I use AI to score each prospect
-5. **Review & Export** - You review and can export the results
+• Creating your Ideal Customer Profile (ICP)
+• Searching for prospects across multiple sources
+• Scoring and ranking potential customers
+• Exporting results in various formats
+• Refining your search criteria
 
-What would you like to know more about?
+Could you be more specific about what you'd like to know?
             """.strip()
+    
+    async def _handle_faq_question(self, conversation: Conversation, message: str, faq_topic: str) -> str:
+        """Handle FAQ questions using LLM to generate contextual responses."""
+        
+        # Define FAQ knowledge base
+        faq_knowledge = {
+            "how_it_works": """
+            Our system works in 5 steps:
+            1. Business Understanding: You describe your company or provide a URL
+            2. ICP Creation: AI analyzes your business to create an Ideal Customer Profile
+            3. Multi-Source Search: We query LinkedIn (HDW), web data (Exa), and analyze websites
+            4. AI Scoring: Each prospect is scored against your ICP criteria
+            5. Review & Export: You review results and can export or refine
+            The entire process takes 2-3 minutes.
+            """,
+            
+            "what_is_icp": """
+            An ICP (Ideal Customer Profile) is a detailed description of your perfect customer:
+            - Company attributes: Industry, size, location, technologies
+            - Person attributes: Job titles, departments, seniority
+            - Pain points: Problems they face that you solve
+            - Buying signals: Indicators they're ready to purchase
+            We use AI to create a data-driven ICP based on your business.
+            """,
+            
+            "data_sources": """
+            We use multiple data sources:
+            - HorizonDataWave: LinkedIn company and people data
+            - Exa AI: Web-based research and content analysis
+            - Firecrawl: Website scraping and analysis
+            - Google AI: Intelligent analysis and scoring
+            Multiple sources ensure comprehensive, accurate data.
+            """,
+            
+            "scoring": """
+            Prospects are scored on multiple factors (0-10 scale):
+            - Company Fit (30%): Industry, size, technologies
+            - Role Match (20%): Title, department, seniority
+            - Pain Points (20%): Problem alignment with ICP
+            - Engagement (15%): Recent activity and growth
+            - Location (15%): Geographic and market fit
+            Scores 8+ are excellent, 6-8 are good matches.
+            """,
+            
+            "timeline": """
+            Process timeline:
+            - Business Analysis: 30-60 seconds
+            - ICP Creation: 30-45 seconds
+            - Prospect Search: 60-90 seconds
+            - Scoring & Ranking: 30-45 seconds
+            Total: 2-3 minutes for complete results.
+            """,
+            
+            "requirements": """
+            To get started you need:
+            Minimum: Company name or website URL
+            Helpful: Example customers, target industries, roles, geographic preferences
+            The more information provided, the better the results.
+            """,
+            
+            "export": """
+            Export options available:
+            - CSV: For spreadsheets and CRM import
+            - JSON: For developers and integrations
+            - PDF: For presentations
+            - Direct CRM integration coming soon
+            """,
+            
+            "accuracy": """
+            We achieve high accuracy through:
+            - Multiple data source validation
+            - AI verification with Google's models
+            - Real-time data from live sources
+            - Continuous improvement from feedback
+            Typically 85-90% relevance rate.
+            """,
+            
+            "privacy": """
+            Privacy and security:
+            - Your data is only used for your searches
+            - No sharing with third parties
+            - Encrypted and temporary storage
+            - GDPR compliant
+            - Only public information is used
+            """
+        }
+        
+        # Use LLM to generate contextual response based on FAQ knowledge
+        faq_prompt = f"""
+        The user is asking a FAQ question about our lead generation system.
+        
+        User question: "{message}"
+        FAQ topic detected: {faq_topic}
+        
+        Relevant knowledge:
+        {faq_knowledge.get(faq_topic, faq_knowledge.get('how_it_works'))}
+        
+        Provide a helpful, friendly response that:
+        1. Directly answers their specific question
+        2. Uses the provided knowledge as the foundation
+        3. Adds relevant details if needed
+        4. Keeps the tone conversational and helpful
+        5. Uses formatting (bold, bullets) for clarity
+        
+        Don't just repeat the knowledge - tailor it to their specific question.
+        """
+        
+        try:
+            response = await self.research_agent.process_message(faq_prompt)
+            return response
+        except:
+            # Fallback to direct FAQ response
+            topic_responses = {
+                "how_it_works": "🚀 **How Our System Works:**\n\n" + faq_knowledge["how_it_works"].strip(),
+                "what_is_icp": "🎯 **What is an ICP?**\n\n" + faq_knowledge["what_is_icp"].strip(),
+                "data_sources": "🔍 **Our Data Sources:**\n\n" + faq_knowledge["data_sources"].strip(),
+                "scoring": "📊 **How Scoring Works:**\n\n" + faq_knowledge["scoring"].strip(),
+                "timeline": "⏱️ **Process Timeline:**\n\n" + faq_knowledge["timeline"].strip(),
+                "requirements": "📦 **What You Need:**\n\n" + faq_knowledge["requirements"].strip(),
+                "export": "💾 **Export Options:**\n\n" + faq_knowledge["export"].strip(),
+                "accuracy": "🎯 **Accuracy & Quality:**\n\n" + faq_knowledge["accuracy"].strip(),
+                "privacy": "🔒 **Privacy & Security:**\n\n" + faq_knowledge["privacy"].strip()
+            }
+            
+            return topic_responses.get(faq_topic, self._get_general_faq_response())
+    
+    def _get_general_faq_response(self) -> str:
+        """Get a general FAQ response when topic is unclear."""
+        return """
+**Common Questions:**
+
+🚀 **How does this work?** - I analyze your business, create an ICP, search multiple sources, and score prospects
+
+🎯 **What's an ICP?** - Your Ideal Customer Profile defining perfect customers
+
+📊 **How is scoring done?** - AI evaluates company fit, role match, pain points, and more
+
+⏱️ **How long does it take?** - Usually 2-3 minutes for complete results
+
+🔍 **What data sources?** - LinkedIn (HDW), web data (Exa), website analysis (Firecrawl)
+
+💾 **Can I export?** - Yes! CSV, JSON, PDF formats available
+
+What specifically would you like to know more about?
+        """.strip()
     
     async def _handle_navigation_request(self, conversation: Conversation, message: str, intent: Dict[str, Any]) -> str:
         """Handle requests to navigate the workflow (skip, go back, start over)."""
