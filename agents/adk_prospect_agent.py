@@ -435,7 +435,6 @@ class ADKProspectAgent(ADKAgent):
             
             # Parse the JSON string to maintain dict structure
             try:
-                import json
                 insights = json.loads(insights_raw) if isinstance(insights_raw, str) else insights_raw
             except (json.JSONDecodeError, TypeError):
                 self.logger.warning("Failed to parse prospect insights JSON, using raw string")
