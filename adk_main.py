@@ -973,14 +973,15 @@ How does this look now? Please let me know if you'd like any other changes, or i
         search_status = """
 🔍 **Starting prospect search...**
 
-I'm now searching for prospects that match your refined ICP:
-• Retrieving your ICP criteria
-• Querying HorizonDataWave for LinkedIn data
-• Searching Exa AI for additional prospects
-• Cross-referencing and validating data
-• Scoring each prospect against your criteria
+This comprehensive search typically takes 30-60 seconds:
 
-This typically takes 30-60 seconds...
+**Step 1/3**: Loading your ICP criteria ⏳
+**Step 2/3**: Searching data sources in parallel
+   • HorizonDataWave (LinkedIn company & people data)
+   • Exa AI (Additional prospect discovery)
+**Step 3/3**: AI scoring and ranking prospects
+
+I'll update you as each step completes...
         """.strip()
         
         try:

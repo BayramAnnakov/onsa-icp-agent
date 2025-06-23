@@ -37,6 +37,10 @@ spec:
           value: "us-central1"
         - name: VERTEX_AI_ENABLED
           value: "true"
+        - name: USE_DATABASE_MEMORY
+          value: "true"
+        - name: DATABASE_URL
+          value: "sqlite:///app/data/adk_agent_memory.db"
         - name: HDW_API_TOKEN
           valueFrom:
             secretKeyRef:

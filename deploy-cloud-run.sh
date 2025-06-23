@@ -81,7 +81,7 @@ gcloud run deploy $SERVICE_NAME \
     --timeout 3600 \
     --concurrency 10 \
     --max-instances 5 \
-    --set-env-vars="PORT=8080" \
+    --set-env-vars="PORT=8080,USE_DATABASE_MEMORY=true,DATABASE_URL=sqlite:///app/data/adk_agent_memory.db" \
     --port 8080
 
 echo "7️⃣ Getting service URL..."
